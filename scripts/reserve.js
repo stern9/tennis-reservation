@@ -19,7 +19,9 @@ const CONFIG = {
       name: 'Cancha de Tenis 1',
       daysAhead: 9,
       slots: {
+        'Sunday': '10:00 AM - 11:00 AM',
         'Tuesday': '06:00 AM - 07:00 AM',
+        'Thursday': '09:00 AM - 10:00 AM',
         'Friday': '06:00 AM - 07:00 AM',
         'Saturday': '09:00 AM - 10:00 AM'
       }
@@ -29,7 +31,9 @@ const CONFIG = {
       name: 'Cancha de Tenis 2',
       daysAhead: 8,
       slots: {
+        'Sunday': '07:00 AM - 08:00 AM',
         'Tuesday': '07:00 AM - 08:00 AM',
+        'Thursday': '07:00 AM - 08:00 AM',
         'Friday': '07:00 AM - 08:00 AM'
       }
     }
