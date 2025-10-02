@@ -19,10 +19,10 @@ const CONFIG = {
       name: 'Cancha de Tenis 1',
       daysAhead: 9,
       slots: {
-        'Sunday': '06:00 AM - 07:00 AM',  // TEMP: Testing tonight's midnight run for Oct 12
+        'Sunday': '08:00 AM - 09:00 AM',  // TEMP: Testing tonight's run
         'Tuesday': '06:00 AM - 07:00 AM',
         'Friday': '06:00 AM - 07:00 AM',
-        'Saturday': '09:00 AM - 10:00 AM'
+        'Saturday': '01:00 PM - 02:00 PM'  // TEMP: Testing for Oct 11
       }
     },
     court2: {
