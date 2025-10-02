@@ -296,18 +296,16 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
     log('Submitting reservation...');
 
-    // Click the GUARDAR button instead of submitting the form
-    await formFrame.evaluate(() => {
-      const saveButton = document.querySelector('input[value="GUARDAR"]') ||
-                         document.querySelector('input#save_btn') ||
-                         document.querySelector('input[type="submit"]');
-      if (saveButton) {
-        saveButton.click();
-      }
-    });
+    // Click the GUARDAR button
+    const saveButton = await formFrame.$('input[value="GUARDAR"], input#save_btn, input[type="submit"]');
+    if (saveButton) {
+      await saveButton.click();
+    } else {
+      throw new Error('Could not find GUARDAR button');
+    }
 
-    // Wait and check for success message in the parent calendar frame
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Wait for navigation or modal to appear
+    await new Promise(resolve => setTimeout(resolve, 4000));
 
     log('DEBUG: Checking all frames for success message...');
     let successFound = false;
@@ -321,6 +319,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
         const bodyText = await frame.evaluate(() => document.body.innerText);
         log(`DEBUG: Frame ${frameUrl} - Text snippet: ${bodyText.substring(0, 200)}`);
 
+        // Check for success message
         if (bodyText.includes('se ha realizado con éxito') ||
             bodyText.includes('aprobada') ||
             (bodyText.includes('reservación') && bodyText.includes('éxito'))) {
@@ -328,6 +327,16 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
           successFound = true;
           successMessage = bodyText;
           break;
+        }
+
+        // Check for limit exceeded error
+        if (bodyText.includes('sobrepasado el limite') || bodyText.includes('límite permitido')) {
+          throw new Error('Reservation limit exceeded - you have already used your allowed reservations');
+        }
+
+        // Check for slot already taken
+        if (bodyText.includes('ocupado') || bodyText.includes('no disponible')) {
+          throw new Error('Time slot is already taken or not available');
         }
       } catch (e) {
         log(`DEBUG: Could not read frame: ${e.message}`);
