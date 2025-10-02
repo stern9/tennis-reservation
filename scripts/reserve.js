@@ -331,17 +331,8 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
         date: targetDate.toDateString(),
         time: timeSlot
       };
-    } else if (bodyText.includes('error') || bodyText.includes('ocupado')) {
-      throw new Error('Reservation failed - slot may already be taken');
     } else {
-      log(`Reservation submitted, response: ${bodyText.substring(0, 200)}`, 'WARN');
-      return {
-        success: true,
-        court: courtConfig.name,
-        date: targetDate.toDateString(),
-        time: timeSlot,
-        note: 'Submitted but confirmation unclear'
-      };
+      throw new Error('Could not confirm reservation success - no success message found');
     }
 
   } catch (error) {
