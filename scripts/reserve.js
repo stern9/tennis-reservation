@@ -210,7 +210,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       if (cell) cell.click();
     }, dateSelector);
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
     // Step 5: Navigate to nested iframe and request reservation
     log('Opening reservation form...');
@@ -219,14 +219,38 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
     const allFrames = page.frames();
     let reservationFrame = null;
 
+    // Debug: Log all frame URLs
+    log(`DEBUG: Found ${allFrames.length} frames`);
+    for (const f of allFrames) {
+      log(`DEBUG: Frame URL: ${f.url()}`);
+    }
+
     // Look for frame with the reservation day view
     for (const f of allFrames) {
       const url = f.url();
       if (url.includes('reservations.php') && !url.includes('pre_reservations')) {
         const content = await f.content();
+        log(`DEBUG: Checking frame ${url}, has Solicitar Reserva: ${content.includes('Solicitar Reserva')}`);
         if (content.includes('Solicitar Reserva')) {
           reservationFrame = f;
           break;
+        }
+      }
+    }
+
+    if (!reservationFrame) {
+      // Try alternate approach - look for any frame with "Solicitar Reserva"
+      log('DEBUG: Trying alternate search for Solicitar Reserva...');
+      for (const f of allFrames) {
+        try {
+          const content = await f.content();
+          if (content.includes('Solicitar Reserva')) {
+            log(`DEBUG: Found Solicitar Reserva in frame: ${f.url()}`);
+            reservationFrame = f;
+            break;
+          }
+        } catch (e) {
+          // Skip frames we can't access
         }
       }
     }
