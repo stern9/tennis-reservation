@@ -300,16 +300,19 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
     log('Submitting reservation...');
 
-    // Click the GUARDAR button
-    const saveButton = await formFrame.$('input[value="GUARDAR"], input#save_btn, input[type="submit"]');
-    if (saveButton) {
-      await saveButton.click();
-    } else {
-      throw new Error('Could not find GUARDAR button');
-    }
+    // Submit via JavaScript to avoid click timeout issues
+    await formFrame.evaluate(() => {
+      const btn = document.getElementById('save_btn');
+      if (btn) {
+        btn.click();
+      } else {
+        const form = document.querySelector('form');
+        if (form) form.submit();
+      }
+    });
 
-    // Wait for navigation or modal to appear
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    // Wait for response
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     log('DEBUG: Checking all frames for success message...');
     let successFound = false;
@@ -320,7 +323,11 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
         const frameUrl = frame.url();
 
         // Look for the success message in frames (especially reservations.php)
-        const bodyText = await frame.evaluate(() => document.body.innerText);
+        // Add timeout to prevent hanging
+        const bodyText = await Promise.race([
+          frame.evaluate(() => document.body.innerText),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Frame read timeout')), 2000))
+        ]);
         log(`DEBUG: Frame ${frameUrl} - Text snippet: ${bodyText.substring(0, 200)}`);
 
         // Check for success message
