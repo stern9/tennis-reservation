@@ -132,7 +132,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
     await page.goto(CONFIG.loginUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
     // Wait for page to fully load
-    await page.waitForTimeout(2000);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Find and fill the login form using CSS selectors
     const usernameInput = await page.$('input[type="text"]');
@@ -171,7 +171,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       if (link) link.click();
     });
 
-    await page.waitForTimeout(3000); // Wait for modal to open
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for modal to open
 
     // Step 3: Select area in iframe
     log(`Selecting ${courtConfig.name}...`);
@@ -188,11 +188,11 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
     await frame.waitForSelector('#area', { timeout: 10000 });
     await frame.select('#area', courtConfig.areaId);
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     await frame.waitForSelector('input#btn_cont', { timeout: 5000 });
     await frame.click('input#btn_cont');
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Step 4: Click on date in calendar
     log(`Selecting date: ${formatDateForUrl(targetDate)}...`);
@@ -210,7 +210,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       if (cell) cell.click();
     }, dateSelector);
 
-    await page.waitForTimeout(5000);
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Step 5: Navigate to nested iframe and request reservation
     log('Opening reservation form...');
@@ -266,7 +266,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       if (link) link.click();
     });
 
-    await page.waitForTimeout(3000);
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Step 6: Fill and submit reservation form
     log(`Selecting time slot: ${timeSlot}...`);
@@ -296,7 +296,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
     log('Submitting reservation...');
     await formFrame.click('input#save_btn');
-    await page.waitForTimeout(5000);
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Check for success/error messages
     const bodyText = await formFrame.evaluate(() => document.body.innerText);
