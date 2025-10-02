@@ -296,30 +296,41 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
     log('Submitting reservation...');
 
-    // Submit the form programmatically instead of clicking
+    // Click the GUARDAR button instead of submitting the form
     await formFrame.evaluate(() => {
-      const form = document.querySelector('form');
-      if (form) {
-        form.submit();
-      } else {
-        document.querySelector('input#save_btn')?.click();
+      const saveButton = document.querySelector('input[value="GUARDAR"]') ||
+                         document.querySelector('input#save_btn') ||
+                         document.querySelector('input[type="submit"]');
+      if (saveButton) {
+        saveButton.click();
       }
     });
 
-    // Wait for the success message to appear (it shows in a modal on the calendar page)
+    // Wait and check for success message in the parent calendar frame
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    // Check for success message in ALL frames (the success modal appears in the calendar frame)
+    log('DEBUG: Checking all frames for success message...');
     let successFound = false;
+    let successMessage = '';
+
     for (const frame of page.frames()) {
       try {
+        const frameUrl = frame.url();
+
+        // Look for the success message in frames (especially reservations.php)
         const bodyText = await frame.evaluate(() => document.body.innerText);
-        if (bodyText.includes('se ha realizado con éxito') || bodyText.includes('aprobada')) {
+        log(`DEBUG: Frame ${frameUrl} - Text snippet: ${bodyText.substring(0, 200)}`);
+
+        if (bodyText.includes('se ha realizado con éxito') ||
+            bodyText.includes('aprobada') ||
+            (bodyText.includes('reservación') && bodyText.includes('éxito'))) {
+          log(`DEBUG: Success message found in frame: ${frameUrl}`);
           successFound = true;
+          successMessage = bodyText;
           break;
         }
       } catch (e) {
-        // Skip frames we can't access
+        log(`DEBUG: Could not read frame: ${e.message}`);
       }
     }
 
