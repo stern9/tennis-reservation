@@ -295,13 +295,35 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
     await formFrame.type('#comments', 'Auto-reserved via GitHub Actions');
 
     log('Submitting reservation...');
-    await formFrame.click('input#save_btn');
-    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Check for success/error messages
-    const bodyText = await formFrame.evaluate(() => document.body.innerText);
+    // Submit the form programmatically instead of clicking
+    await formFrame.evaluate(() => {
+      const form = document.querySelector('form');
+      if (form) {
+        form.submit();
+      } else {
+        document.querySelector('input#save_btn')?.click();
+      }
+    });
 
-    if (bodyText.includes('éxito') || bodyText.includes('confirmada') || bodyText.includes('reservada')) {
+    // Wait for the success message to appear (it shows in a modal on the calendar page)
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Check for success message in ALL frames (the success modal appears in the calendar frame)
+    let successFound = false;
+    for (const frame of page.frames()) {
+      try {
+        const bodyText = await frame.evaluate(() => document.body.innerText);
+        if (bodyText.includes('se ha realizado con éxito') || bodyText.includes('aprobada')) {
+          successFound = true;
+          break;
+        }
+      } catch (e) {
+        // Skip frames we can't access
+      }
+    }
+
+    if (successFound) {
       log(`✅ SUCCESS: Reserved ${courtConfig.name} on ${targetDate.toDateString()} at ${timeSlot}`, 'SUCCESS');
       return {
         success: true,
