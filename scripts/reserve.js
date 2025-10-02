@@ -127,20 +127,41 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
   try {
     log(`Starting reservation for ${courtConfig.name} on ${targetDate.toDateString()} at ${timeSlot}`);
 
-    // Step 1: Login
+    // Step 1: Login - FIXED VERSION
     log('Navigating to login page...');
-    await page.goto(CONFIG.loginUrl, { waitUntil: 'networkidle0' });
+    await page.goto(CONFIG.loginUrl, { waitUntil: 'networkidle2', timeout: 30000 });
 
-    const textboxes = await page.$$('input[type="text"], input:not([type])');
-    if (textboxes.length < 2) {
-      throw new Error('Login form not found');
+    // Wait for page to fully load
+    await page.waitForTimeout(2000);
+
+    // Find and fill the login form using CSS selectors
+    const usernameInput = await page.$('input[type="text"]');
+    const passwordInput = await page.$('input[type="password"]');
+
+    if (!usernameInput || !passwordInput) {
+      // Fallback: try finding by looking at all inputs
+      const allInputs = await page.$$('input');
+      log(`Found ${allInputs.length} input fields on login page`);
+
+      if (allInputs.length >= 2) {
+        await allInputs[0].type(CONFIG.username);
+        await allInputs[1].type(CONFIG.password);
+      } else {
+        throw new Error('Could not find login form inputs');
+      }
+    } else {
+      await usernameInput.type(CONFIG.username);
+      await passwordInput.type(CONFIG.password);
     }
 
-    await textboxes[0].type(CONFIG.username);
-    await textboxes[1].type(CONFIG.password);
+    log('Credentials entered, clicking login button...');
 
-    await page.click('button:has-text("Ingresar")');
-    await page.waitForNavigation({ waitUntil: 'networkidle0' });
+    // Click login button
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+      page.click('button, input[type="submit"]')
+    ]);
+
     log('Login successful');
 
     // Step 2: Navigate to reservations
@@ -150,68 +171,111 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       if (link) link.click();
     });
 
-    await page.waitForTimeout(2000); // Wait for modal to open
+    await page.waitForTimeout(3000); // Wait for modal to open
 
     // Step 3: Select area in iframe
     log(`Selecting ${courtConfig.name}...`);
-    const frameHandle = await page.$('iframe');
-    const frame = await frameHandle.contentFrame();
 
+    // Wait for iframe to load
+    await page.waitForSelector('iframe', { timeout: 10000 });
+
+    const frames = page.frames();
+    const frame = frames.find(f => f.url().includes('pre_reservations.php'));
+
+    if (!frame) {
+      throw new Error('Could not find reservations iframe');
+    }
+
+    await frame.waitForSelector('#area', { timeout: 10000 });
     await frame.select('#area', courtConfig.areaId);
-    await frame.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
+    await frame.waitForSelector('input#btn_cont', { timeout: 5000 });
     await frame.click('input#btn_cont');
-    await frame.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     // Step 4: Click on date in calendar
     log(`Selecting date: ${formatDateForUrl(targetDate)}...`);
-    const dateSelector = `td.calendar-day_clickable[onclick*="${formatDateForUrl(targetDate)}"]`;
 
-    const dateCell = await frame.$(dateSelector);
-    if (!dateCell) {
-      throw new Error(`Date ${formatDateForUrl(targetDate)} not available for booking`);
+    const calendarFrame = frames.find(f => f.url().includes('reservations.php'));
+    if (!calendarFrame) {
+      throw new Error('Could not find calendar iframe');
     }
 
-    await frame.evaluate((selector) => {
+    const dateSelector = `td.calendar-day_clickable[onclick*="${formatDateForUrl(targetDate)}"]`;
+    await calendarFrame.waitForSelector(dateSelector, { timeout: 10000 });
+
+    await calendarFrame.evaluate((selector) => {
       const cell = document.querySelector(selector);
       if (cell) cell.click();
     }, dateSelector);
 
-    await frame.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     // Step 5: Navigate to nested iframe and request reservation
     log('Opening reservation form...');
-    const nestedFrameHandle = await frame.$('iframe');
-    const nestedFrame = await nestedFrameHandle.contentFrame();
 
-    const reserveLink = await nestedFrame.$('a[href*="new_reservation.php"]');
-    if (!reserveLink) {
-      throw new Error('Reservation link not found - date may be fully booked');
+    // Find the nested iframe (the one inside the calendar frame)
+    const allFrames = page.frames();
+    let reservationFrame = null;
+
+    // Look for frame with the reservation day view
+    for (const f of allFrames) {
+      const url = f.url();
+      if (url.includes('reservations.php') && !url.includes('pre_reservations')) {
+        const content = await f.content();
+        if (content.includes('Solicitar Reserva')) {
+          reservationFrame = f;
+          break;
+        }
+      }
     }
 
-    await nestedFrame.evaluate(() => {
+    if (!reservationFrame) {
+      throw new Error('Could not find day view iframe');
+    }
+
+    await reservationFrame.waitForSelector('a[href*="new_reservation.php"]', { timeout: 5000 });
+
+    await reservationFrame.evaluate(() => {
       const link = document.querySelector('a[href*="new_reservation.php"]');
       if (link) link.click();
     });
 
-    await nestedFrame.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     // Step 6: Fill and submit reservation form
     log(`Selecting time slot: ${timeSlot}...`);
+
+    // Find the form iframe
+    let formFrame = null;
+    for (const f of page.frames()) {
+      const url = f.url();
+      if (url.includes('new_reservation.php')) {
+        formFrame = f;
+        break;
+      }
+    }
+
+    if (!formFrame) {
+      throw new Error('Could not find reservation form iframe');
+    }
+
     const timeSlotValue = TIME_SLOT_VALUES[timeSlot];
     if (!timeSlotValue) {
       throw new Error(`Unknown time slot: ${timeSlot}`);
     }
 
-    await nestedFrame.select('#schedule', timeSlotValue);
-    await nestedFrame.type('#comments', 'Auto-reserved via GitHub Actions');
+    await formFrame.waitForSelector('#schedule', { timeout: 5000 });
+    await formFrame.select('#schedule', timeSlotValue);
+    await formFrame.type('#comments', 'Auto-reserved via GitHub Actions');
 
     log('Submitting reservation...');
-    await nestedFrame.click('input#save_btn');
-    await nestedFrame.waitForTimeout(3000);
+    await formFrame.click('input#save_btn');
+    await page.waitForTimeout(5000);
 
     // Check for success/error messages
-    const bodyText = await nestedFrame.evaluate(() => document.body.innerText);
+    const bodyText = await formFrame.evaluate(() => document.body.innerText);
 
     if (bodyText.includes('éxito') || bodyText.includes('confirmada') || bodyText.includes('reservada')) {
       log(`✅ SUCCESS: Reserved ${courtConfig.name} on ${targetDate.toDateString()} at ${timeSlot}`, 'SUCCESS');
@@ -236,6 +300,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
   } catch (error) {
     log(`❌ FAILED: ${courtConfig.name} - ${error.message}`, 'ERROR');
+    log(`Stack trace: ${error.stack}`, 'ERROR');
     throw error;
   } finally {
     await page.close();
@@ -288,7 +353,13 @@ async function main() {
     // Launch browser
     browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu'
+      ]
     });
 
     // Make reservations
@@ -363,6 +434,7 @@ async function main() {
 
   } catch (error) {
     log(`FATAL ERROR: ${error.message}`, 'ERROR');
+    log(`Stack trace: ${error.stack}`, 'ERROR');
     await sendEmail('Reservation Script Error', `Fatal error occurred:\n\n${error.stack}`, false);
     process.exit(1);
   } finally {
