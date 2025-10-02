@@ -1,0 +1,21 @@
+{
+  "name": "tennis-court-reservation",
+  "version": "1.0.0",
+  "description": "Automated tennis court reservation system for Parques del Sol",
+  "main": "scripts/reserve.js",
+  "scripts": {
+    "test": "node scripts/reserve.js",
+    "reserve": "node scripts/reserve.js"
+  },
+  "keywords": [
+    "automation",
+    "reservation",
+    "tennis"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^21.5.2",
+    "nodemailer": "^6.9.7"
+  }
+}

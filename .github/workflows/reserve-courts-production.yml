@@ -1,0 +1,45 @@
+name: Reserve Tennis Courts (Production)
+
+on:
+  schedule:
+    # Run ONLY on days when new reservations become available
+    # Court 1 (9 days ahead): Tue/Fri/Sat → Run on Sun/Wed/Thu
+    # Court 2 (8 days ahead): Tue/Fri → Run on Mon/Thu
+    # Combined: Run on Sun, Mon, Wed, Thu at 23:59 UTC
+    - cron: '59 23 * * 0,1,3,4'  # 0=Sunday, 1=Monday, 3=Wednesday, 4=Thursday
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  reserve-courts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run reservation script
+        env:
+          TENNIS_USERNAME: ${{ secrets.TENNIS_USERNAME }}
+          TENNIS_PASSWORD: ${{ secrets.TENNIS_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+        run: node scripts/reserve.js
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reservation-logs
+          path: logs/
+          retention-days: 7
