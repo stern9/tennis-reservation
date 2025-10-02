@@ -148,14 +148,14 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       log(`Found ${allInputs.length} input fields on login page`);
 
       if (allInputs.length >= 2) {
-        await allInputs[0].type(CONFIG.username);
-        await allInputs[1].type(CONFIG.password);
+        await allInputs[0].type(String(CONFIG.username));
+        await allInputs[1].type(String(CONFIG.password));
       } else {
         throw new Error('Could not find login form inputs');
       }
     } else {
-      await usernameInput.type(CONFIG.username);
-      await passwordInput.type(CONFIG.password);
+      await usernameInput.type(String(CONFIG.username));
+      await passwordInput.type(String(CONFIG.password));
     }
 
     log('Credentials entered, clicking login button...');
@@ -223,18 +223,11 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
     const allFrames = page.frames();
     let reservationFrame = null;
 
-    // Debug: Log all frame URLs
-    log(`DEBUG: Found ${allFrames.length} frames`);
-    for (const f of allFrames) {
-      log(`DEBUG: Frame URL: ${f.url()}`);
-    }
-
     // Look for frame with the reservation day view
     for (const f of allFrames) {
       const url = f.url();
       if (url.includes('reservations.php') && !url.includes('pre_reservations')) {
         const content = await f.content();
-        log(`DEBUG: Checking frame ${url}, has Solicitar Reserva: ${content.includes('Solicitar Reserva')}`);
         if (content.includes('Solicitar Reserva')) {
           reservationFrame = f;
           break;
@@ -244,12 +237,10 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
 
     if (!reservationFrame) {
       // Try alternate approach - look for any frame with "Solicitar Reserva"
-      log('DEBUG: Trying alternate search for Solicitar Reserva...');
       for (const f of allFrames) {
         try {
           const content = await f.content();
           if (content.includes('Solicitar Reserva')) {
-            log(`DEBUG: Found Solicitar Reserva in frame: ${f.url()}`);
             reservationFrame = f;
             break;
           }
@@ -295,48 +286,65 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
     }
 
     await formFrame.waitForSelector('#schedule', { timeout: 5000 });
-    await formFrame.select('#schedule', timeSlotValue);
-    await formFrame.type('#comments', 'Auto-reserved via GitHub Actions');
+
+    // Select by visible text, not by value
+    const selected = await formFrame.evaluate((targetSlot) => {
+      const select = document.getElementById('schedule');
+      const [startTime, endTime] = targetSlot.split(' - ');
+
+      // Find option by text content
+      for (let i = 0; i < select.options.length; i++) {
+        const option = select.options[i];
+        if (option.text.includes(startTime) && option.text.includes(endTime)) {
+          select.selectedIndex = i;
+          // Trigger change event
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          return option.text;
+        }
+      }
+      return null;
+    }, timeSlot);
+
+    if (!selected) {
+      throw new Error(`Could not find time slot: ${timeSlot}`);
+    }
 
     log('Submitting reservation...');
 
-    // Submit via JavaScript to avoid click timeout issues
+    // In watch mode, keep browser open and wait before submitting
+    if (process.env.WATCH_MODE === 'true') {
+      log('WATCH MODE: Pausing 5 seconds before submission. Browser will stay open.');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+
+    // Click the button asynchronously with setTimeout to avoid blocking
     await formFrame.evaluate(() => {
-      const btn = document.getElementById('save_btn');
-      if (btn) {
-        btn.click();
-      } else {
-        const form = document.querySelector('form');
-        if (form) form.submit();
-      }
+      setTimeout(() => {
+        const btn = document.getElementById('save_btn');
+        if (btn) {
+          btn.click();
+        }
+      }, 0);
     });
 
     // Wait for response
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 4000));
 
-    log('DEBUG: Checking all frames for success message...');
     let successFound = false;
-    let successMessage = '';
 
     for (const frame of page.frames()) {
       try {
-        const frameUrl = frame.url();
-
-        // Look for the success message in frames (especially reservations.php)
         // Add timeout to prevent hanging
         const bodyText = await Promise.race([
           frame.evaluate(() => document.body.innerText),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Frame read timeout')), 2000))
         ]);
-        log(`DEBUG: Frame ${frameUrl} - Text snippet: ${bodyText.substring(0, 200)}`);
 
         // Check for success message
         if (bodyText.includes('se ha realizado con éxito') ||
             bodyText.includes('aprobada') ||
             (bodyText.includes('reservación') && bodyText.includes('éxito'))) {
-          log(`DEBUG: Success message found in frame: ${frameUrl}`);
           successFound = true;
-          successMessage = bodyText;
           break;
         }
 
@@ -350,7 +358,7 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
           throw new Error('Time slot is already taken or not available');
         }
       } catch (e) {
-        log(`DEBUG: Could not read frame: ${e.message}`);
+        // Skip frames we can't access
       }
     }
 
@@ -393,8 +401,10 @@ async function main() {
     if (CONFIG.testMode) {
       // Test mode: use provided date or today
       const testDate = process.env.TARGET_DATE || today.toISOString().split('T')[0];
-      targetDateCourt1 = new Date(testDate);
-      targetDateCourt2 = new Date(testDate);
+      // Parse as local date, not UTC (avoids timezone issues)
+      const [year, month, day] = testDate.split('-').map(Number);
+      targetDateCourt1 = new Date(year, month - 1, day);
+      targetDateCourt2 = new Date(year, month - 1, day);
       log(`TEST MODE: Using date ${testDate}`, 'INFO');
     } else {
       // Production mode: calculate rolling window
@@ -419,16 +429,17 @@ async function main() {
     }
 
     // Launch browser
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu'
-      ]
-    });
+    const launchOptions = {
+      headless: process.env.WATCH_MODE !== 'true',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
+
+    // Only add headless-specific args when actually headless
+    if (process.env.WATCH_MODE !== 'true') {
+      launchOptions.args.push('--disable-dev-shm-usage', '--disable-gpu');
+    }
+
+    browser = await puppeteer.launch(launchOptions);
 
     // Make reservations
     if (court1TimeSlot && (!CONFIG.testMode || process.env.TEST_COURT_1 !== 'false')) {
