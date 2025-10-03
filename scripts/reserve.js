@@ -19,10 +19,10 @@ const CONFIG = {
       name: 'Cancha de Tenis 1',
       daysAhead: 9,
       slots: {
-        'Sunday': '08:00 AM - 09:00 AM',  // TEMP: Testing tonight's run
+        'Sunday': '06:00 AM - 07:00 AM',  // TEMP: Testing tonight's midnight run for Oct 12
         'Tuesday': '06:00 AM - 07:00 AM',
         'Friday': '06:00 AM - 07:00 AM',
-        'Saturday': '01:00 PM - 02:00 PM'  // TEMP: Testing for Oct 11
+        'Saturday': '09:00 AM - 10:00 AM'
       }
     },
     court2: {
@@ -372,9 +372,20 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
     }
 
   } catch (error) {
-    log(`❌ FAILED: ${courtConfig.name} - ${error.message}`, 'ERROR');
-    log(`Stack trace: ${error.stack}`, 'ERROR');
-    throw error;
+    // Make error messages more user-friendly
+    let friendlyMessage = error.message;
+
+    if (error.message.includes('Waiting for selector') && error.message.includes('calendar-day')) {
+      friendlyMessage = `Date ${targetDate.toDateString()} is not available yet in the calendar. It may not be within the booking window, or the site might be down.`;
+    } else if (error.message.includes('Navigation timeout')) {
+      friendlyMessage = 'Login or page navigation timed out. The website might be slow or down.';
+    } else if (error.message.includes('Could not find')) {
+      friendlyMessage = error.message; // These are already clear
+    }
+
+    log(`❌ FAILED: ${courtConfig.name} - ${friendlyMessage}`, 'ERROR');
+    log(`❌ Technical details: ${error.message}`, 'ERROR');
+    throw new Error(friendlyMessage);
   } finally {
     await page.close();
   }
@@ -496,9 +507,11 @@ async function main() {
     emailBody += `\nRun time: ${new Date().toISOString()}`;
     emailBody += `\nLog file: ${logFile}`;
 
-    const subject = results.length > 0
-      ? `Reservations Confirmed (${results.length}/${results.length + errors.length})`
-      : 'Reservation Failed';
+    const subject = results.length > 0 && errors.length === 0
+      ? `🎾 Reservations Confirmed ✅ (${results.length}/${results.length})`
+      : results.length > 0 && errors.length > 0
+      ? `🎾 Partial Success ⚠️ (${results.length}/${results.length + errors.length})`
+      : `🎾 Reservation Failed ❌`;
 
     await sendEmail(subject, emailBody, errors.length === 0);
 
@@ -511,7 +524,7 @@ async function main() {
   } catch (error) {
     log(`FATAL ERROR: ${error.message}`, 'ERROR');
     log(`Stack trace: ${error.stack}`, 'ERROR');
-    await sendEmail('Reservation Script Error', `Fatal error occurred:\n\n${error.stack}`, false);
+    await sendEmail('🎾 Reservation Script Error ❌', `Fatal error occurred:\n\n${error.stack}`, false);
     process.exit(1);
   } finally {
     if (browser) {
