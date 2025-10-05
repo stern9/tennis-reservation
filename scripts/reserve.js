@@ -203,13 +203,55 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
       throw new Error('Could not find calendar iframe');
     }
 
-    const dateSelector = `td.calendar-day_clickable[onclick*="${formatDateForUrl(targetDate)}"]`;
-    await calendarFrame.waitForSelector(dateSelector, { timeout: 10000 });
+    const formattedDate = formatDateForUrl(targetDate);
 
-    await calendarFrame.evaluate((selector) => {
-      const cell = document.querySelector(selector);
-      if (cell) cell.click();
-    }, dateSelector);
+    // Retry logic: Try for up to 3 minutes if date not available
+    const maxRetries = process.env.ENABLE_RETRY === 'true' ? 12 : 1; // 12 retries = 3 minutes (15 sec intervals)
+    let dateStatus = 'not_found';
+    let retryCount = 0;
+
+    while (retryCount < maxRetries) {
+      // Check if date exists in calendar (clickable or not)
+      dateStatus = await calendarFrame.evaluate((dateStr) => {
+        // Look for clickable date
+        const clickableCell = document.querySelector(`td.calendar-day_clickable[onclick*="${dateStr}"]`);
+        if (clickableCell) return 'clickable';
+
+        // Look for non-clickable date (exists but not available)
+        const anyCell = Array.from(document.querySelectorAll('td')).find(td =>
+          td.getAttribute('onclick')?.includes(dateStr)
+        );
+        if (anyCell) return 'not_clickable';
+
+        return 'not_found';
+      }, formattedDate);
+
+      if (dateStatus === 'clickable') break; // Found it, exit retry loop
+
+      if (retryCount < maxRetries - 1) {
+        log(`Date not clickable yet (status: ${dateStatus}), retrying in 15 seconds... (attempt ${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 15000));
+        // Refresh the calendar frame
+        await calendarFrame.reload();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        retryCount++;
+      } else {
+        retryCount++;
+      }
+    }
+
+    if (dateStatus === 'not_found') {
+      throw new Error(`Date ${targetDate.toDateString()} not found in calendar after ${retryCount} retries - may not be within booking window yet`);
+    }
+
+    if (dateStatus === 'not_clickable') {
+      throw new Error(`Date ${targetDate.toDateString()} is in calendar but not clickable after ${retryCount} retries - may be fully booked or not available yet`);
+    }
+
+    // Date is clickable, proceed
+    log(`Date is clickable, proceeding with reservation (found after ${retryCount} retries)`);
+    const dateSelector = `td.calendar-day_clickable[onclick*="${formattedDate}"]`;
+    await calendarFrame.click(dateSelector);
 
     await new Promise(resolve => setTimeout(resolve, 5000));
 
