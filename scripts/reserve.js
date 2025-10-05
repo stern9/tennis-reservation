@@ -392,9 +392,14 @@ async function makeReservation(browser, courtConfig, targetDate, timeSlot) {
           throw new Error('Reservation limit exceeded - you have already used your allowed reservations');
         }
 
-        // Check for slot already taken
+        // Check for slot already taken (the actual error message from the site)
+        if (bodyText.includes('excede la cantidad máxima de personas')) {
+          throw new Error('Time slot already taken - someone else reserved it first');
+        }
+
+        // Check for slot occupied
         if (bodyText.includes('ocupado') || bodyText.includes('no disponible')) {
-          throw new Error('Time slot is already taken or not available');
+          throw new Error('Time slot is occupied or not available');
         }
       } catch (e) {
         // Skip frames we can't access
