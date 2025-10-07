@@ -20,19 +20,15 @@ while true; do
   CURRENT_MINUTE=$(TZ='America/Costa_Rica' date +%M)
   CURRENT_SECOND=$(TZ='America/Costa_Rica' date +%S)
 
-  if [ "$CURRENT_HOUR" = "12" ] && [ "$CURRENT_MINUTE" = "00" ] && [ "$CURRENT_SECOND" = "00" ]; then
-    echo "🕛 Noon reached! Starting tests..."
+  if [ "$CURRENT_HOUR" = "12" ] && [ "$CURRENT_MINUTE" = "15" ] && [ "$CURRENT_SECOND" = "00" ]; then
+    echo "🕐 12:15 PM reached! Starting tests..."
     break
   fi
 
-  # Show countdown every 10 minutes, then every minute in last 5 minutes
-  MINUTES_LEFT=$((59 - CURRENT_MINUTE))
-  if [ "$CURRENT_HOUR" = "11" ]; then
-    if [ $((CURRENT_MINUTE % 10)) -eq 0 ] && [ "$CURRENT_SECOND" = "00" ]; then
-      echo "⏰ $MINUTES_LEFT minutes until noon Costa Rica time..."
-    elif [ "$CURRENT_MINUTE" -ge "55" ] && [ "$CURRENT_SECOND" = "00" ]; then
-      echo "⏰ $MINUTES_LEFT minutes until noon..."
-    fi
+  # Show countdown every minute in last 5 minutes
+  if [ "$CURRENT_HOUR" = "12" ] && [ "$CURRENT_MINUTE" -ge "10" ] && [ "$CURRENT_SECOND" = "00" ]; then
+    MINUTES_LEFT=$((15 - CURRENT_MINUTE))
+    echo "⏰ $MINUTES_LEFT minutes until 12:15 PM..."
   fi
 
   sleep 1
