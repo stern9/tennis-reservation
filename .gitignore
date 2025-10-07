@@ -5,9 +5,14 @@ node_modules/
 logs/
 *.log
 
+# Debug screenshots (auto-generated and cleaned up)
+screenshots/
+
 # Environment files
 .env
 .env.local
+.env.sh
+.env.*
 
 # OS files
 .DS_Store

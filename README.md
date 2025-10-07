@@ -5,31 +5,23 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 ## 🎯 What It Does
 
 **Automatically reserves:**
-- **Court 1** on Tuesdays & Fridays at 6:00 AM
+- **Court 1** on Tuesdays & Fridays at 6:00 AM, Saturdays at 9:00 AM
 - **Court 2** on Tuesdays & Fridays at 7:00 AM
-- **Court 1** on Saturdays at 9:00 AM
 
 **How it works:**
-- Runs every day at 23:59 (11:59 PM)
-- Checks if new dates become available (Court 1: 9 days ahead, Court 2: 8 days ahead)
-- If the new date is a Tuesday/Friday/Saturday, makes the reservation
-- Sends you an email confirmation via Gmail
+- **11:58 PM Costa Rica time**: Script starts and logs in
+- **12:00 AM**: New dates become available, script immediately reserves
+- **Court 1**: 9 days ahead
+- **Court 2**: 8 days ahead
+- Sends email confirmation via Gmail
 
 ## 📋 Setup Instructions
 
-### 1. Create GitHub Repository
+### 1. Install Dependencies
 
-1. Create a new **private** repository on GitHub (e.g., `tennis-reservation`)
-2. Clone or initialize this code in that repo
-3. Push the files to GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/tennis-reservation.git
-   git push -u origin main
-   ```
+```bash
+npm install
+```
 
 ### 2. Setup Gmail App Password
 
@@ -38,133 +30,133 @@ To send email notifications, you need a Gmail App Password:
 1. Go to your Google Account: https://myaccount.google.com/
 2. Click **Security** in the left sidebar
 3. Enable **2-Step Verification** (if not already enabled)
-4. Once 2FA is enabled, scroll down to **App passwords**
+4. Scroll down to **App passwords**
 5. Click **App passwords**
 6. Select app: **Mail**
 7. Select device: **Other (Custom name)** → type "Tennis Reservation"
 8. Click **Generate**
 9. **Copy the 16-character password** (e.g., `abcd efgh ijkl mnop`)
 
-### 3. Configure GitHub Secrets
+### 3. Configure Environment Variables
 
-Go to your repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+Create a `.env` file or export these variables:
 
-Add these **5 secrets**:
-
-| Secret Name | Value | Example |
-|-------------|-------|---------|
-| `TENNIS_USERNAME` | Your tennis account username | `1Ji` |
-| `TENNIS_PASSWORD` | Your tennis account password | `12345` |
-| `EMAIL_TO` | Email where you want notifications | `your.email@gmail.com` |
-| `GMAIL_USER` | Your Gmail address | `your.email@gmail.com` |
-| `GMAIL_PASSWORD` | Gmail App Password from step 2 | `abcd efgh ijkl mnop` |
+```bash
+export TENNIS_USERNAME='your_username'
+export TENNIS_PASSWORD='your_password'
+export EMAIL_TO='your@email.com'
+export GMAIL_USER='your_gmail@gmail.com'
+export GMAIL_PASSWORD='your_16_char_app_password'
+```
 
 **Important:** Use the 16-character App Password, NOT your regular Gmail password!
 
 ### 4. Test the Setup
 
-#### Test Run (Recommended before going live):
+Before going live, test with available dates:
 
-1. Go to **Actions** tab in your GitHub repo
-2. Select **"Test Reservation (Manual Run)"**
-3. Click **"Run workflow"** button
-4. Fill in the parameters:
-   - **Target date:** Pick a date you know is available (e.g., `2025-10-05`)
-   - **Court 1 time:** `06:00 AM - 07:00 AM` (or choose available slot)
-   - **Court 2 time:** `07:00 AM - 08:00 AM` (or choose available slot)
-   - **Test Court 1:** ✅ (checked)
-   - **Test Court 2:** ✅ (checked)
-5. Click **"Run workflow"** green button
-6. Wait 2-3 minutes for it to complete
-7. Check your email for confirmation! 📧
+```bash
+# Using the test script (interactive)
+./test-local.sh
 
-**What to expect:**
-- The workflow will login, navigate to the reservation form, and book the courts
-- You'll get an email with the results
-- If it fails, check the logs in the Actions run
-
-### 5. Enable Production (Automatic Daily Runs)
-
-Once your test succeeds:
-
-✅ The production workflow is **already configured**!
-
-- It runs automatically every day at **23:59 UTC**
-- No action needed on your part
-- You'll receive emails when reservations are made
-
-## 🕐 Timing & Timezone
-
-**Default schedule:** 23:59 UTC (11:59 PM UTC)
-
-**To adjust for your timezone:**
-
-Edit `.github/workflows/reserve-courts-production.yml`:
-
-```yaml
-schedule:
-  # Current: 23:59 UTC
-  - cron: '59 23 * * *'
-
-  # For Costa Rica (UTC-6), to run at 11:59 PM local time:
-  # 11:59 PM local = 5:59 AM UTC next day
-  - cron: '59 5 * * *'
+# Or manually with npm
+npm run reserve:debug -- --target-date 2025-10-15 --court1-time "06:00 AM - 07:00 AM"
 ```
 
-**Quick timezone reference:**
-- UTC = 23:59
-- EST (UTC-5) = 04:59 (next day)
-- CST/Costa Rica (UTC-6) = 05:59 (next day)
-- PST (UTC-8) = 07:59 (next day)
+This will:
+- Take screenshots at each step (saved to `screenshots/`)
+- Show detailed logs
+- Send you an email with results
 
-Use [crontab.guru](https://crontab.guru/) to verify your cron time.
+## 🚀 Usage
 
-## 📊 Monitoring & Logs
+### Production Mode (Auto-schedule)
 
-### View Run Logs:
+Run at 11:58 PM to be ready for midnight:
 
-1. Go to **Actions** tab in your repo
-2. Click on any workflow run
-3. Click the job name to see detailed logs
-4. Expand steps to see what happened
+```bash
+# Schedule with cron (for DigitalOcean droplet)
+# Run at 11:58 PM Costa Rica time (5:58 AM UTC)
+58 5 * * * cd /path/to/tennis-reservation && node scripts/reserve.js
+```
 
-### Download Log Files:
+The script will:
+1. Login at 11:58 PM
+2. Wait until exactly 12:00 AM
+3. Reserve courts as soon as dates become available
 
-If a run fails, logs are saved as artifacts:
-1. Scroll down on the workflow run page
-2. Find **Artifacts** section
-3. Download `reservation-logs` or `test-reservation-logs`
+### Test Mode
 
-### Email Notifications:
+```bash
+# Test with specific date (requires --target-date)
+npm run reserve:test -- --target-date 2025-10-15
 
-You'll receive emails for:
-- ✅ Successful reservations (with details)
-- ❌ Failed reservations (with error info)
+# Test with custom times
+npm run reserve:test -- --target-date 2025-10-15 \
+  --court1-time "09:00 AM - 10:00 AM" \
+  --court2-time "10:00 AM - 11:00 AM"
 
-## 🔧 Customization
+# Test only Court 1
+npm run reserve:test -- --target-date 2025-10-15 --skip-court2
 
-### Change Reservation Schedule:
+# Dry run (preview what would be reserved)
+npm run reserve:dry-run
+```
 
-Edit `scripts/reserve.js`:
+### Manual Reservation
+
+Use the interactive script:
+
+```bash
+./manual-reserve.sh
+```
+
+Or directly:
+
+```bash
+npm run reserve:test -- --target-date 2025-10-20 \
+  --court1-time "06:00 AM - 07:00 AM"
+```
+
+### Debug Mode
+
+Enable screenshots and detailed logging:
+
+```bash
+# Debug mode with visible browser
+npm run reserve:watch -- --target-date 2025-10-15
+
+# Debug mode with screenshots (headless)
+npm run reserve:debug -- --target-date 2025-10-15
+```
+
+Screenshots are saved to `screenshots/{timestamp}/` and automatically deleted after email is sent.
+
+## 🔧 Configuration
+
+Edit `scripts/reserve.js` to customize court schedules:
 
 ```javascript
 courts: {
   court1: {
+    areaId: '5',
+    name: 'Cancha de Tenis 1',
+    daysAhead: 9,
     slots: {
       'Tuesday': '06:00 AM - 07:00 AM',
       'Friday': '06:00 AM - 07:00 AM',
       'Saturday': '09:00 AM - 10:00 AM'
-      // Add more days:
-      // 'Monday': '07:00 AM - 08:00 AM',
-      // 'Wednesday': '06:00 AM - 07:00 AM',
+      // Add more days as needed
     }
   },
   court2: {
+    areaId: '7',
+    name: 'Cancha de Tenis 2',
+    daysAhead: 8,
     slots: {
       'Tuesday': '07:00 AM - 08:00 AM',
       'Friday': '07:00 AM - 08:00 AM'
-      // Add more days:
-      // 'Saturday': '08:00 AM - 09:00 AM',
+      // Add more days as needed
     }
   }
 }
@@ -172,8 +164,7 @@ courts: {
 
 **Available days:** `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`
 
-### Available Time Slots:
-
+**Available time slots:**
 ```
 06:00 AM - 07:00 AM
 07:00 AM - 08:00 AM
@@ -190,16 +181,55 @@ courts: {
 06:00 PM - 07:00 PM
 ```
 
+## 📊 Monitoring & Logs
+
+### View Logs
+
+Logs are saved to `logs/reservation-{date}.log`:
+
+```bash
+tail -f logs/reservation-$(date +%Y-%m-%d).log
+```
+
+### Email Notifications
+
+You'll receive emails for:
+- ✅ **Successful reservations** - with court, date, and time details
+- ⚠️ **Partial success** - some courts reserved, others failed
+- ❌ **Failed reservations** - with specific error messages:
+  - `DATE_NOT_AVAILABLE`: Date not in booking window yet
+  - `DATE_NOT_CLICKABLE`: Date exists but not clickable (fully booked)
+  - `SLOT_TAKEN`: Time slot already reserved by someone else
+  - `RESERVATION_LIMIT`: You've exceeded your reservation limit
+  - `TIME_SLOT_NOT_FOUND`: Requested time not available
+
+### Debug Screenshots
+
+When running with `--debug` flag, screenshots are taken at:
+1. Login page
+2. Logged in dashboard
+3. Reservations modal
+4. Calendar view
+5. Day view with time slots
+6. Form filled out
+7. Submission result
+
+Screenshots are automatically deleted after the email is sent to save storage.
+
 ## 🐛 Troubleshooting
 
 ### "Login failed"
-- ✅ Check `TENNIS_USERNAME` and `TENNIS_PASSWORD` secrets are correct
+- ✅ Check `TENNIS_USERNAME` and `TENNIS_PASSWORD` are correct
 - ✅ Try logging in manually on the website to verify credentials
 
-### "Date not available"
-- ✅ The rolling window may have changed (verify booking window manually)
-- ✅ Courts may be fully booked already
-- ✅ Check the logs to see which date was attempted
+### "DATE_NOT_AVAILABLE"
+- ✅ The date may not be within the booking window yet (Court 1: 9 days, Court 2: 8 days)
+- ✅ Check the website manually to confirm booking window
+
+### "SLOT_TAKEN"
+- ✅ Someone else reserved the slot first
+- ✅ Run the script closer to midnight (11:58 PM) to be first in line
+- ✅ Consider using DigitalOcean droplet for more reliable timing
 
 ### "Email not sent" or "Authentication failed"
 - ✅ Verify you're using the **App Password**, not your regular Gmail password
@@ -207,73 +237,71 @@ courts: {
 - ✅ Confirm 2-Step Verification is enabled on your Google account
 - ✅ Try generating a new App Password
 
-### Workflow didn't run automatically
-- ✅ Check **Actions** tab to see if workflows are enabled
-- ✅ Verify the cron schedule in `reserve-courts-production.yml`
-- ✅ GitHub requires at least 1 commit in the last 60 days to run scheduled workflows
-
-### Test workflow fails immediately
-- ✅ Make sure all 5 secrets are configured correctly
-- ✅ Check that the target date is actually available on the website
-- ✅ Review the logs for specific error messages
+### Script runs but doesn't reserve
+- ✅ Run with `--debug --watch` flags to see browser interaction
+- ✅ Check screenshots in `screenshots/` directory
+- ✅ Review detailed logs for error messages
 
 ## 📁 File Structure
 
 ```
 tennis-reservation/
-├── .github/
-│   └── workflows/
-│       ├── reserve-courts-production.yml   # Daily automatic runs
-│       └── test-reservation.yml            # Manual testing
 ├── scripts/
-│   └── reserve.js                          # Main reservation script
-├── logs/                                   # Auto-generated (ignored by git)
-├── package.json                            # Node dependencies
-├── .gitignore                              # Git ignore file
-└── README.md                               # This file
+│   └── reserve.js              # Main reservation script
+├── logs/                       # Auto-generated log files
+├── screenshots/                # Debug screenshots (auto-cleaned)
+├── test-local.sh               # Interactive test script
+├── manual-reserve.sh           # Manual reservation trigger
+├── package.json                # Dependencies and npm scripts
+├── .gitignore                  # Git ignore file
+├── README.md                   # This file
+├── CLAUDE.md                   # Developer documentation
+└── reservation_flow_documentation.md  # Complete navigation flow reference
 ```
 
 ## 🔒 Security
 
-- ✅ All credentials stored as **encrypted GitHub Secrets**
-- ✅ Repository should be **private** to keep your info safe
+- ✅ All credentials in environment variables (never committed)
 - ✅ Passwords never appear in logs
 - ✅ Browser runs in headless mode (no UI)
 - ✅ Gmail App Password is safer than using your main password
+- ✅ Screenshots auto-deleted after email sent
 
 ## 💰 Cost
 
 **100% FREE!**
-- GitHub Actions: 2000 minutes/month (free for private repos)
-- Gmail: Free email sending
-- No server costs
 - No subscriptions
+- No server costs (if run locally)
+- Optional: DigitalOcean droplet ($6/month for 24/7 reliability)
 
-## 🎯 Quick Start Checklist
+## 🎯 Next Steps
 
-- [ ] Create private GitHub repo
-- [ ] Push code to repo
-- [ ] Generate Gmail App Password
-- [ ] Add all 5 GitHub Secrets
-- [ ] Run test workflow with a known available date
-- [ ] Check email for test confirmation
-- [ ] Verify production workflow is scheduled
-- [ ] Done! 🎉
+1. **Test locally**: Use `./test-local.sh` with available dates
+2. **Verify all scenarios**:
+   - ✅ Successful reservation
+   - ❌ Date not available
+   - ❌ Slot already taken
+3. **Deploy to DigitalOcean** (optional):
+   - Set up cron job at 11:58 PM Costa Rica time
+   - More reliable than running from laptop
+   - Details in deployment guide (coming soon)
 
 ## 📝 Notes
 
-- The script books **both courts back-to-back** on Tuesdays/Fridays to get a 2-hour play window (smart workaround for the 1-hour limit!)
+- The script books **both courts back-to-back** on Tuesdays/Fridays for a 2-hour play window
 - Saturday only books Court 1 at 9 AM
-- Adjust the schedule anytime by editing `scripts/reserve.js` and pushing changes
+- Adjust schedules anytime by editing `scripts/reserve.js`
+- Timing is critical - script uses Costa Rica timezone (UTC-6)
 
 ## 🙋 Support
 
 If something goes wrong:
-1. Check the **Actions** logs for detailed error messages
-2. Verify all secrets are set correctly
-3. Test with the manual test workflow first
-4. Make sure the website structure hasn't changed
+1. Check the `logs/` directory for detailed error messages
+2. Run with `--debug --watch` flags to see what's happening
+3. Review screenshots in `screenshots/` directory
+4. Verify all environment variables are set correctly
+5. Test with known available dates first
 
 ---
 
-**Pro tip:** Star ⭐ this repo so you can find it easily later!
+**Pro tip:** Use `--dry-run` to preview what would be reserved without actually booking!
