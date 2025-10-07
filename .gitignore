@@ -26,3 +26,7 @@ Thumbs.db
 
 # Screenshots (from documentation process)
 *.png
+
+# Claude Code files (keep local only)
+.claude/
+CLAUDE.md
