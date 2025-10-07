@@ -13,7 +13,7 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 - **12:00 AM**: New dates become available, script immediately reserves
 - **Court 1**: 9 days ahead
 - **Court 2**: 8 days ahead
-- Sends email confirmation via Gmail
+- Sends email confirmation via Resend API
 
 ## 📋 Setup Instructions
 
@@ -23,44 +23,45 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 npm install
 ```
 
-### 2. Setup Gmail App Password
+### 2. Get Resend API Key
 
-To send email notifications, you need a Gmail App Password:
+To send email notifications, you need a Resend API key:
 
-1. Go to your Google Account: https://myaccount.google.com/
-2. Click **Security** in the left sidebar
-3. Enable **2-Step Verification** (if not already enabled)
-4. Scroll down to **App passwords**
-5. Click **App passwords**
-6. Select app: **Mail**
-7. Select device: **Other (Custom name)** → type "Tennis Reservation"
-8. Click **Generate**
-9. **Copy the 16-character password** (e.g., `abcd efgh ijkl mnop`)
+1. Go to https://resend.com/api-keys
+2. Click **Create API Key**
+3. Give it a name (e.g., "Tennis Reservations")
+4. Copy the API key (starts with `re_`)
 
 ### 3. Configure Environment Variables
 
-Create a `.env` file or export these variables:
+Copy the example file:
 
 ```bash
-export TENNIS_USERNAME='your_username'
-export TENNIS_PASSWORD='your_password'
-export EMAIL_TO='your@email.com'
-export GMAIL_USER='your_gmail@gmail.com'
-export GMAIL_PASSWORD='your_16_char_app_password'
+cp .env.example .env
 ```
 
-**Important:** Use the 16-character App Password, NOT your regular Gmail password!
+Edit `.env` with your values:
+
+```bash
+TENNIS_USERNAME=your_username
+TENNIS_PASSWORD=your_password
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxx
+TO_EMAIL_ADDRESS=your@email.com
+FROM_EMAIL_ADDRESS=contact@yourdomain.com
+```
+
+**Note:** Your Resend domain must be verified to send emails.
 
 ### 4. Test the Setup
 
 Before going live, test with available dates:
 
 ```bash
-# Using the test script (interactive)
-./test-local.sh
+# Dry run (shows what would be reserved without actually doing it)
+npm run reserve:dry-run
 
-# Or manually with npm
-npm run reserve:debug -- --target-date 2025-10-15 --court1-time "06:00 AM - 07:00 AM"
+# Test with specific date
+npm run reserve:debug -- --target-date 2025-10-15 --court1-time "06:00 AM - 07:00 AM" --skip-court2
 ```
 
 This will:
@@ -70,20 +71,9 @@ This will:
 
 ## 🚀 Usage
 
-### Production Mode (Auto-schedule)
+### Production Mode (Deployed on Server)
 
-Run at 11:58 PM to be ready for midnight:
-
-```bash
-# Schedule with cron (for DigitalOcean droplet)
-# Run at 11:58 PM Costa Rica time (5:58 AM UTC)
-58 5 * * * cd /path/to/tennis-reservation && node scripts/reserve.js
-```
-
-The script will:
-1. Login at 11:58 PM
-2. Wait until exactly 12:00 AM
-3. Reserve courts as soon as dates become available
+See **Server Deployment** section below for full setup instructions.
 
 ### Test Mode
 
@@ -105,17 +95,10 @@ npm run reserve:dry-run
 
 ### Manual Reservation
 
-Use the interactive script:
-
-```bash
-./manual-reserve.sh
-```
-
-Or directly:
-
 ```bash
 npm run reserve:test -- --target-date 2025-10-20 \
-  --court1-time "06:00 AM - 07:00 AM"
+  --court1-time "06:00 AM - 07:00 AM" \
+  --skip-court2
 ```
 
 ### Debug Mode
@@ -231,11 +214,11 @@ Screenshots are automatically deleted after the email is sent to save storage.
 - ✅ Run the script closer to midnight (11:58 PM) to be first in line
 - ✅ Consider using DigitalOcean droplet for more reliable timing
 
-### "Email not sent" or "Authentication failed"
-- ✅ Verify you're using the **App Password**, not your regular Gmail password
-- ✅ Make sure `GMAIL_USER` is your full Gmail address
-- ✅ Confirm 2-Step Verification is enabled on your Google account
-- ✅ Try generating a new App Password
+### "Email not sent" or "Resend API error"
+- ✅ Verify your `RESEND_API_KEY` is correct (starts with `re_`)
+- ✅ Check your Resend domain is verified at https://resend.com/domains
+- ✅ Make sure `FROM_EMAIL_ADDRESS` uses your verified domain
+- ✅ Check Resend logs at https://resend.com/emails for delivery status
 
 ### Script runs but doesn't reserve
 - ✅ Run with `--debug --watch` flags to see browser interaction
@@ -250,41 +233,193 @@ tennis-reservation/
 │   └── reserve.js              # Main reservation script
 ├── logs/                       # Auto-generated log files
 ├── screenshots/                # Debug screenshots (auto-cleaned)
-├── test-local.sh               # Interactive test script
-├── manual-reserve.sh           # Manual reservation trigger
+├── .env.example                # Environment variables template
 ├── package.json                # Dependencies and npm scripts
 ├── .gitignore                  # Git ignore file
 ├── README.md                   # This file
-├── CLAUDE.md                   # Developer documentation
 └── reservation_flow_documentation.md  # Complete navigation flow reference
 ```
 
 ## 🔒 Security
 
-- ✅ All credentials in environment variables (never committed)
+- ✅ All credentials in environment variables (never committed to git)
+- ✅ `.env` file is gitignored
 - ✅ Passwords never appear in logs
 - ✅ Browser runs in headless mode (no UI)
-- ✅ Gmail App Password is safer than using your main password
+- ✅ Resend API for secure email delivery
 - ✅ Screenshots auto-deleted after email sent
 
 ## 💰 Cost
 
-**100% FREE!**
-- No subscriptions
-- No server costs (if run locally)
-- Optional: DigitalOcean droplet ($6/month for 24/7 reliability)
+**Minimal cost:**
+- DigitalOcean droplet: $6/month (for 24/7 reliability)
+- Resend: Free tier (3,000 emails/month)
+- Puppeteer/Node.js: Free and open source
 
-## 🎯 Next Steps
+## 🚀 Server Deployment
 
-1. **Test locally**: Use `./test-local.sh` with available dates
-2. **Verify all scenarios**:
-   - ✅ Successful reservation
-   - ❌ Date not available
-   - ❌ Slot already taken
-3. **Deploy to DigitalOcean** (optional):
-   - Set up cron job at 11:58 PM Costa Rica time
-   - More reliable than running from laptop
-   - Details in deployment guide (coming soon)
+### Prerequisites
+
+You'll need:
+- Ubuntu server (tested on Ubuntu 24.04)
+- Node.js installed
+- Git installed
+- sudo access
+
+### Step 1: Install System Dependencies
+
+Chrome/Puppeteer requires system libraries:
+
+```bash
+sudo apt-get update
+
+sudo apt-get install -y \
+  libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 \
+  libc6 libcairo2 libcups2t64 libdbus-1-3 libexpat1 \
+  libfontconfig1 libgcc-s1 libgdk-pixbuf2.0-0 \
+  libglib2.0-0t64 libgtk-3-0t64 libnspr4 libpango-1.0-0 \
+  libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 \
+  libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 \
+  libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
+  ca-certificates fonts-liberation libnss3 \
+  lsb-release xdg-utils wget libgbm1
+```
+
+### Step 2: Clone and Setup
+
+```bash
+cd ~
+git clone https://github.com/yourusername/tennis-reservation.git
+cd tennis-reservation
+npm install
+```
+
+### Step 3: Configure Environment
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Add your credentials:
+
+```bash
+TENNIS_USERNAME=your_username
+TENNIS_PASSWORD=your_password
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxx
+TO_EMAIL_ADDRESS=your@email.com
+FROM_EMAIL_ADDRESS=contact@yourdomain.com
+```
+
+Save and load:
+
+```bash
+source .env
+```
+
+### Step 4: Add to ~/.bashrc
+
+So cron can access environment variables:
+
+```bash
+nano ~/.bashrc
+```
+
+Add at the bottom:
+
+```bash
+# Tennis Reservation System
+export TENNIS_USERNAME='your_username'
+export TENNIS_PASSWORD='your_password'
+export RESEND_API_KEY='re_xxxxxxxxxxxxxxxxxxxxx'
+export TO_EMAIL_ADDRESS='your@email.com'
+export FROM_EMAIL_ADDRESS='contact@yourdomain.com'
+```
+
+Reload:
+
+```bash
+source ~/.bashrc
+```
+
+### Step 5: Test
+
+```bash
+node scripts/reserve.js --dry-run
+```
+
+You should see what would be reserved (if anything) without actually making reservations.
+
+### Step 6: Setup Cron Job
+
+```bash
+crontab -e
+```
+
+Add this line (runs at 11:58 PM Costa Rica time = 5:58 AM UTC):
+
+```bash
+58 5 * * * cd /home/yourusername/tennis-reservation && /usr/bin/node scripts/reserve.js >> /home/yourusername/tennis-reservation/logs/cron.log 2>&1
+```
+
+Save and exit. Verify:
+
+```bash
+crontab -l
+```
+
+### Step 7: Setup Log Rotation
+
+Prevent logs from growing indefinitely:
+
+```bash
+sudo nano /etc/logrotate.d/tennis-reservation
+```
+
+Add:
+
+```
+/home/yourusername/tennis-reservation/logs/*.log {
+    daily
+    rotate 30
+    compress
+    missingok
+    notifempty
+    create 0644 yourusername yourusername
+}
+```
+
+This keeps 30 days of compressed logs (~50-100 KB total).
+
+### Monitoring
+
+Check logs:
+
+```bash
+# Today's reservation log
+tail -f ~/tennis-reservation/logs/reservation-$(date +%Y-%m-%d).log
+
+# Cron execution log
+tail -f ~/tennis-reservation/logs/cron.log
+```
+
+Check cron is running:
+
+```bash
+crontab -l
+```
+
+### Updating
+
+To pull latest code:
+
+```bash
+cd ~/tennis-reservation
+git pull
+npm install  # if dependencies changed
+```
+
+No need to restart - cron will use updated code on next run.
 
 ## 📝 Notes
 
