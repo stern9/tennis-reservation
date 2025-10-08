@@ -312,9 +312,25 @@ async function loginPhase(browser) {
     await page.click('button, input[type="submit"]');
     log("Waiting for login to complete...");
 
-    await page.waitForSelector('a[href="pre_reservations.php"]', {
-      timeout: 30000,
-    });
+    // Add delay to let page process the login
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    // Check what's on the page before waiting for selector
+    const currentUrl = page.url();
+    log(`Current URL after login click: ${currentUrl}`, "DEBUG");
+
+    try {
+      await page.waitForSelector('a[href="pre_reservations.php"]', {
+        timeout: 30000,
+      });
+    } catch (selectorError) {
+      // Log page content if selector not found
+      const bodyText = await page.evaluate(() =>
+        document.body.innerText.substring(0, 500)
+      );
+      log(`Page content snapshot: ${bodyText}`, "DEBUG");
+      throw selectorError;
+    }
 
     await takeScreenshot(page, "2-logged-in-dashboard");
     log("✅ Phase 1 Complete: Logged in successfully");
