@@ -288,22 +288,25 @@ async function loginPhase(browser) {
 
     await takeScreenshot(page, "1-login-page");
 
-    // Find and fill login form
-    const usernameInput = await page.$('input[type="text"]');
-    const passwordInput = await page.$('input[type="password"]');
+    // Find and fill login form using specific field names
+    const usernameInput = await page.$('input[name="number"]');
+    const passwordInput = await page.$('input[name="pass"]');
 
     if (!usernameInput || !passwordInput) {
-      const allInputs = await page.$$("input");
-      log(`Found ${allInputs.length} input fields on login page`);
+      log("Could not find login inputs by name, trying by type...", "DEBUG");
+      const textInput = await page.$('input[type="text"]');
+      const passInput = await page.$('input[type="password"]');
 
-      if (allInputs.length >= 2) {
-        await allInputs[0].type(String(CONFIG.username));
-        await allInputs[1].type(String(CONFIG.password));
+      if (textInput && passInput) {
+        await textInput.type(String(CONFIG.username));
+        await passInput.type(String(CONFIG.password));
       } else {
         throw new Error("Could not find login form inputs");
       }
     } else {
+      log(`Filling username field with: ${CONFIG.username}`, "DEBUG");
       await usernameInput.type(String(CONFIG.username));
+      log(`Filling password field`, "DEBUG");
       await passwordInput.type(String(CONFIG.password));
     }
 
