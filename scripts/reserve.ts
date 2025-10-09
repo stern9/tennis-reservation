@@ -58,6 +58,7 @@ const CONFIG: AppConfig = {
         Tuesday: "06:00 AM - 07:00 AM",
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
+        Sunday: "09:00 AM - 10:00 AM",  // Testing cron - will try to reserve Oct 19
       },
     },
     court2: {
