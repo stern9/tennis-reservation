@@ -30,3 +30,13 @@ Thumbs.db
 # Claude Code files (keep local only)
 .claude/
 CLAUDE.md
+
+# TypeScript build artifacts
+dist/
+*.tsbuildinfo
+
+# TypeScript artifacts in scripts/ (should only be in dist/)
+scripts/*.js
+scripts/*.js.map
+scripts/*.d.ts
+scripts/*.d.ts.map

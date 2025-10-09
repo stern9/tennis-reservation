@@ -4,11 +4,13 @@
   "description": "Automated tennis court reservation system for Parques del Sol",
   "main": "scripts/reserve.js",
   "scripts": {
-    "reserve": "node scripts/reserve.js",
-    "reserve:test": "node scripts/reserve.js --test",
-    "reserve:dry-run": "node scripts/reserve.js --dry-run",
-    "reserve:debug": "node scripts/reserve.js --test --debug",
-    "reserve:watch": "node scripts/reserve.js --test --debug --watch"
+    "build": "tsc",
+    "reserve": "npm run build && node dist/scripts/reserve.js",
+    "reserve:test": "npm run build && node dist/scripts/reserve.js --test",
+    "reserve:dry-run": "npm run build && node dist/scripts/reserve.js --dry-run",
+    "reserve:debug": "npm run build && node dist/scripts/reserve.js --test --debug",
+    "reserve:watch": "npm run build && node dist/scripts/reserve.js --test --debug --watch",
+    "diagnose": "node scripts/diagnose-dates.js"
   },
   "keywords": [
     "automation",
@@ -20,5 +22,9 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "puppeteer": "^24.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
   }
 }

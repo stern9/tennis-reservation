@@ -1,15 +1,34 @@
-const puppeteer = require("puppeteer");
-const fs = require("fs");
-const path = require("path");
+import puppeteer, { Page, Browser } from "puppeteer";
+import * as fs from "fs";
+import * as path from "path";
+import * as dotenv from "dotenv";
 
-// Load .env from project root (parent directory of scripts/)
-require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+// Load .env from project root
+// When compiled, __dirname will be dist/scripts/, so we need to go up two levels
+dotenv.config({ path: path.join(__dirname, "..", "..", ".env") });
+
+// Import TypeScript utilities
+import {
+  crMidnight,
+  addDaysCR,
+  formatDateForUrl,
+  getDayOfWeek,
+  nowInCR,
+  ymdCR,
+} from "../src/time-cr";
+import {
+  waitForReservationIframe,
+  detectError,
+  dumpFrameContent,
+  dumpAllFrames,
+} from "../src/error-detection";
+import type { CourtConfig, ReservationResult, AppConfig, Args } from "../src/types";
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-const CONFIG = {
+const CONFIG: AppConfig = {
   // Website
   loginUrl: "https://parquesdelsol.sasweb.net/",
 
@@ -75,7 +94,7 @@ const TIME_SLOT_VALUES = {
 // COMMAND LINE ARGUMENTS PARSING
 // ============================================================================
 
-const ARGS = {
+const ARGS: Args = {
   test: process.argv.includes("--test"),
   dryRun: process.argv.includes("--dry-run"),
   targetDate: getArgValue("--target-date"),
@@ -91,7 +110,7 @@ const ARGS = {
   testDelay: getArgValue("--test-delay"), // Delay in seconds before phase 2
 };
 
-function getArgValue(argName) {
+function getArgValue(argName: string): string | null {
   const index = process.argv.indexOf(argName);
   return index !== -1 && index + 1 < process.argv.length
     ? process.argv[index + 1]
@@ -102,7 +121,8 @@ function getArgValue(argName) {
 // LOGGING SETUP
 // ============================================================================
 
-const logDir = path.join(__dirname, "..", "logs");
+// When compiled, __dirname = dist/scripts/, so go up two levels to project root
+const logDir = path.join(__dirname, "..", "..", "logs");
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }
@@ -112,7 +132,7 @@ const logFile = path.join(
   `reservation-${new Date().toISOString().split("T")[0]}.log`
 );
 
-function log(message, level = "INFO") {
+function log(message: string, level: string = "INFO"): void {
   const timestamp = new Date().toISOString();
   const logMessage = `[${timestamp}] [${level}] ${message}`;
   console.log(logMessage);
@@ -123,10 +143,11 @@ function log(message, level = "INFO") {
 // SCREENSHOT UTILITIES
 // ============================================================================
 
-const screenshotDir = path.join(__dirname, "..", "screenshots");
-let currentScreenshotSession = null;
+// When compiled, __dirname = dist/scripts/, so go up two levels to project root
+const screenshotDir = path.join(__dirname, "..", "..", "screenshots");
+let currentScreenshotSession: string | null = null;
 
-function initScreenshotSession() {
+function initScreenshotSession(): string | null {
   if (!ARGS.debugMode) return null;
 
   const sessionDir = path.join(
@@ -141,15 +162,15 @@ function initScreenshotSession() {
   return sessionDir;
 }
 
-async function takeScreenshot(page, name) {
+async function takeScreenshot(page: Page, name: string): Promise<void> {
   if (!ARGS.debugMode || !currentScreenshotSession) return;
 
   try {
     const filepath = path.join(currentScreenshotSession, `${name}.png`);
-    await page.screenshot({ path: filepath, fullPage: true });
+    await page.screenshot({ path: filepath as `${string}.png`, fullPage: true });
     log(`Screenshot saved: ${name}.png`, "DEBUG");
   } catch (error) {
-    log(`Failed to take screenshot ${name}: ${error.message}`, "WARN");
+    log(`Failed to take screenshot ${name}: ${(error as Error).message}`, "WARN");
   }
 }
 
@@ -166,52 +187,26 @@ function cleanupScreenshots() {
       log("Screenshots cleaned up", "DEBUG");
     }
   } catch (error) {
-    log(`Failed to cleanup screenshots: ${error.message}`, "WARN");
+    log(`Failed to cleanup screenshots: ${(error as Error).message}`, "WARN");
   }
 }
 
 // ============================================================================
 // DATE & TIME UTILITIES
 // ============================================================================
+// NOTE: Core timezone utilities now imported from src/time-cr.ts
+// This fixes the timezone bug where we were using system time instead of CR time
 
 function getCostaRicaTime() {
-  // Costa Rica is UTC-6 (no DST)
-  const now = new Date();
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-  const costaRicaTime = new Date(utc + -6 * 3600000);
-  return costaRicaTime;
+  // Deprecated: Use nowInCR() instead
+  // Keeping for backward compatibility with waitUntilMidnight()
+  return nowInCR();
 }
 
-function addDays(date, days) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function getDayOfWeek(date) {
-  const days = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ];
-  return days[date.getDay()];
-}
-
-function formatDateForUrl(date) {
-  const year = date.getFullYear();
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  return `${year}-${month}-${day}`;
-}
-
-function waitUntilMidnight() {
-  return new Promise((resolve) => {
+function waitUntilMidnight(): Promise<void> {
+  return new Promise<void>((resolve) => {
     const checkMidnight = () => {
-      const crTime = getCostaRicaTime();
+      const crTime = nowInCR(); // Use correct CR time calculation
       const hours = crTime.getHours();
       const minutes = crTime.getMinutes();
       const seconds = crTime.getSeconds();
@@ -236,7 +231,7 @@ function waitUntilMidnight() {
 // EMAIL NOTIFICATION
 // ============================================================================
 
-async function sendEmail(subject, body, attachScreenshots = false) {
+async function sendEmail(subject: string, body: string, attachScreenshots: boolean = false): Promise<void> {
   if (!CONFIG.resendApiKey) {
     log("RESEND_API_KEY not configured, skipping email notification", "WARN");
     return;
@@ -268,7 +263,7 @@ async function sendEmail(subject, body, attachScreenshots = false) {
     const result = await response.json();
     log(`Email sent successfully via Resend (ID: ${result.id})`);
   } catch (error) {
-    log(`Failed to send email: ${error.message}`, "ERROR");
+    log(`Failed to send email: ${(error as Error).message}`, "ERROR");
   }
 }
 
@@ -276,7 +271,7 @@ async function sendEmail(subject, body, attachScreenshots = false) {
 // PHASE 1: LOGIN (at 11:58pm)
 // ============================================================================
 
-async function loginPhase(browser) {
+async function loginPhase(browser: Browser): Promise<Page> {
   const page = await browser.newPage();
 
   try {
@@ -344,7 +339,7 @@ async function loginPhase(browser) {
   } catch (error) {
     await takeScreenshot(page, "error-login-phase");
     await page.close();
-    throw new Error(`Login failed: ${error.message}`);
+    throw new Error(`Login failed: ${(error as Error).message}`);
   }
 }
 
@@ -352,7 +347,7 @@ async function loginPhase(browser) {
 // PHASE 2: RESERVE (at 12:00am or immediately in test mode)
 // ============================================================================
 
-async function reservePhase(page, courtConfig, targetDate, timeSlot) {
+async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Date, timeSlot: string): Promise<ReservationResult> {
   try {
     log(
       `🎾 Phase 2: Reserving ${
@@ -363,7 +358,7 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
     // Navigate to reservations
     log("Opening reservations modal...");
     await page.evaluate(() => {
-      const link = document.querySelector('a[href="pre_reservations.php"]');
+      const link = document.querySelector<HTMLAnchorElement>('a[href="pre_reservations.php"]');
       if (link) link.click();
     });
 
@@ -429,39 +424,52 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
       // Click on it anyway to get the error message
       const dateSelector = `td[onclick*="${formattedDate}"]`;
       await calendarFrame.click(dateSelector);
-      await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      // Check for the "not available yet" message
-      const allFrames = page.frames();
-      let notAvailableMessage = null;
+      // Wait for response iframe using new event-driven approach
+      try {
+        const resultFrame = await waitForReservationIframe(page, {
+          timeout: 8000,
+        });
+        const errorResult = await detectError(resultFrame);
 
-      for (const f of allFrames) {
-        try {
-          const bodyText = await Promise.race([
-            f.evaluate(() => document.body.innerText),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Frame read timeout")), 2000)
-            ),
-          ]);
-
-          // Check for "not available yet" message in Spanish
-          if (bodyText.includes("aún no está disponible para reservación")) {
-            // Extract the number of days from the message
-            const daysMatch = bodyText.match(/(\d+)\s+días?\s+antes/);
-            const daysAhead = daysMatch ? daysMatch[1] : "X";
-            notAvailableMessage = `Date not available yet - reservations open ${daysAhead} days in advance`;
-            break;
-          }
-        } catch (e) {
-          // Skip frames we can't access
+        // Dump frame content for debugging
+        if (ARGS.debugMode) {
+          await dumpFrameContent(
+            resultFrame,
+            path.join(
+              currentScreenshotSession || ".",
+              "error-date-not-clickable.txt"
+            )
+          );
         }
-      }
 
-      if (notAvailableMessage) {
-        throw new Error(`DATE_NOT_AVAILABLE_YET: ${notAvailableMessage}`);
-      } else {
+        if (errorResult.type === "NOT_YET_AVAILABLE") {
+          throw new Error(`DATE_NOT_AVAILABLE_YET: ${errorResult.message}`);
+        } else if (errorResult.type === "SLOT_TAKEN") {
+          // Date exists but all slots are taken
+          throw new Error(
+            `DATE_FULLY_BOOKED: ${errorResult.message}`
+          );
+        } else {
+          // Date not clickable for unknown reason - use server's message
+          throw new Error(
+            `DATE_NOT_CLICKABLE: ${errorResult.message}`
+          );
+        }
+      } catch (waitError) {
+        // Re-throw if this is one of our intentional error types
+        const errorMsg = (waitError as Error).message;
+        if (
+          errorMsg.startsWith("DATE_NOT_AVAILABLE_YET:") ||
+          errorMsg.startsWith("DATE_FULLY_BOOKED:") ||
+          errorMsg.startsWith("DATE_NOT_CLICKABLE:")
+        ) {
+          throw waitError;
+        }
+
+        // If no response frame appeared at all, date is not clickable without explanation
         throw new Error(
-          `DATE_NOT_CLICKABLE: Date ${targetDate.toDateString()} is in calendar but not clickable - may be fully booked`
+          `DATE_NOT_CLICKABLE: Date ${targetDate.toDateString()} exists in calendar but is not clickable (no server response - may be fully booked or disabled)`
         );
       }
     }
@@ -517,7 +525,7 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
     });
 
     await reservationFrame.evaluate(() => {
-      const link = document.querySelector('a[href*="new_reservation.php"]');
+      const link = document.querySelector<HTMLAnchorElement>('a[href*="new_reservation.php"]');
       if (link) link.click();
     });
 
@@ -543,7 +551,9 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
 
     // Select time slot by visible text
     const selected = await formFrame.evaluate((targetSlot) => {
-      const select = document.getElementById("schedule");
+      const select = document.getElementById("schedule") as HTMLSelectElement | null;
+      if (!select) return null;
+
       const [startTime, endTime] = targetSlot.split(" - ");
 
       for (let i = 0; i < select.options.length; i++) {
@@ -579,62 +589,48 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
     // Click submit button
     await formFrame.evaluate(() => {
       setTimeout(() => {
-        const btn = document.getElementById("save_btn");
+        const btn = document.getElementById("save_btn") as HTMLElement | null;
         if (btn) btn.click();
       }, 0);
     });
 
-    // Wait for response
-    await new Promise((resolve) => setTimeout(resolve, 4000));
+    // Wait for response using event-driven approach
+    log("Waiting for result iframe...", "DEBUG");
+
+    // Log all current frame URLs for debugging
+    const currentFrames = page.frames().map(f => f.url());
+    log(`Current frames before waiting: ${JSON.stringify(currentFrames)}`, "DEBUG");
+
+    let resultFrame;
+    try {
+      resultFrame = await waitForReservationIframe(page, { timeout: 10000 });
+      log(`Found result frame: ${resultFrame.url()}`, "DEBUG");
+    } catch (waitError) {
+      // Log all frames if waiting failed
+      const allFrames = page.frames().map(f => f.url());
+      log(`Failed to find result frame. All frames: ${JSON.stringify(allFrames)}`, "ERROR");
+      throw new Error(`Timed out waiting for reservation result frame: ${(waitError as Error).message}`);
+    }
 
     await takeScreenshot(page, "7-submission-result");
 
-    // Check for success or error
-    let successFound = false;
-    let errorMessage = null;
+    // Use robust error detection with APP marker parsing
+    const errorResult = await detectError(resultFrame);
 
-    for (const frame of page.frames()) {
-      try {
-        const bodyText = await Promise.race([
-          frame.evaluate(() => document.body.innerText),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Frame read timeout")), 2000)
-          ),
-        ]);
-
-        // Check for success
-        if (
-          bodyText.includes("se ha realizado con éxito") ||
-          bodyText.includes("aprobada") ||
-          (bodyText.includes("reservación") && bodyText.includes("éxito"))
-        ) {
-          successFound = true;
-          break;
-        }
-
-        // Check for errors
-        if (
-          bodyText.includes("sobrepasado el limite") ||
-          bodyText.includes("límite permitido")
-        ) {
-          errorMessage =
-            "RESERVATION_LIMIT: Reservation limit exceeded - you have already used your allowed reservations";
-        } else if (bodyText.includes("excede la cantidad máxima de personas")) {
-          errorMessage =
-            "SLOT_TAKEN: Time slot already taken - someone else reserved it first";
-        } else if (
-          bodyText.includes("ocupado") ||
-          bodyText.includes("no disponible")
-        ) {
-          errorMessage =
-            "SLOT_OCCUPIED: Time slot is occupied or not available";
-        }
-      } catch (e) {
-        // Skip frames we can't access
-      }
+    // Dump frame content if debug mode enabled
+    if (ARGS.debugMode) {
+      await dumpFrameContent(
+        resultFrame,
+        path.join(currentScreenshotSession || ".", "submission-result.txt")
+      );
     }
 
-    if (successFound) {
+    log(
+      `Detection result: ${errorResult.type} - ${errorResult.message}`,
+      "DEBUG"
+    );
+
+    if (errorResult.type === "SUCCESS") {
       log(
         `✅ SUCCESS: Reserved ${
           courtConfig.name
@@ -647,11 +643,22 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
         date: targetDate.toDateString(),
         time: timeSlot,
       };
-    } else if (errorMessage) {
-      throw new Error(errorMessage);
+    } else if (errorResult.type === "SLOT_TAKEN") {
+      throw new Error(`SLOT_TAKEN: ${errorResult.message}`);
+    } else if (errorResult.type === "RESERVATION_LIMIT") {
+      throw new Error(`RESERVATION_LIMIT: ${errorResult.message}`);
+    } else if (errorResult.type === "NOT_YET_AVAILABLE") {
+      throw new Error(`DATE_NOT_AVAILABLE_YET: ${errorResult.message}`);
     } else {
+      // Unknown error - dump all frames for debugging
+      if (ARGS.debugMode) {
+        await dumpAllFrames(
+          page,
+          path.join(currentScreenshotSession || ".", "all-frames-unknown.txt")
+        );
+      }
       throw new Error(
-        "UNKNOWN_ERROR: Could not confirm reservation success - no success message found"
+        `UNKNOWN_ERROR: Could not classify reservation response - ${errorResult.message}`
       );
     }
   } catch (error) {
@@ -664,7 +671,7 @@ async function reservePhase(page, courtConfig, targetDate, timeSlot) {
 // MAIN EXECUTION
 // ============================================================================
 
-async function main() {
+async function main(): Promise<void> {
   log("=== Tennis Court Reservation Script Started ===");
   log(
     `Mode: ${ARGS.test ? "TEST" : "PRODUCTION"}${
@@ -672,17 +679,23 @@ async function main() {
     }${ARGS.debugMode ? " (DEBUG)" : ""}`
   );
 
-  const results = [];
-  const errors = [];
-  let browser;
+  const results: ReservationResult[] = [];
+  const errors: { court: string; error: string }[] = [];
+  let browser: Browser | undefined;
 
   try {
     // Initialize screenshot session if in debug mode
     initScreenshotSession();
 
-    // Calculate target dates
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Calculate target dates using COSTA RICA time (fixes timezone bug!)
+    const today = crMidnight(); // ← THE FIX: Use CR timezone, not system timezone
+
+    // Log timezone info for debugging
+    const systemNow = new Date();
+    const crNow = nowInCR();
+    log(`System time: ${systemNow.toISOString()}`, "DEBUG");
+    log(`Costa Rica time: ${crNow.toISOString()}`, "DEBUG");
+    log(`Today (CR): ${today.toDateString()}`, "DEBUG");
 
     let targetDateCourt1, targetDateCourt2;
 
@@ -693,9 +706,21 @@ async function main() {
       targetDateCourt2 = new Date(year, month - 1, day);
       log(`TEST MODE: Using date ${ARGS.targetDate}`);
     } else if (!ARGS.test) {
-      // Production mode: calculate rolling window
-      targetDateCourt1 = addDays(today, CONFIG.courts.court1.daysAhead);
-      targetDateCourt2 = addDays(today, CONFIG.courts.court2.daysAhead);
+      // Production mode: calculate rolling window using CR timezone
+      targetDateCourt1 = addDaysCR(today, CONFIG.courts.court1.daysAhead);
+      targetDateCourt2 = addDaysCR(today, CONFIG.courts.court2.daysAhead);
+      log(
+        `Production target Court 1: ${ymdCR(targetDateCourt1)} (${
+          CONFIG.courts.court1.daysAhead
+        } days from CR today)`,
+        "DEBUG"
+      );
+      log(
+        `Production target Court 2: ${ymdCR(targetDateCourt2)} (${
+          CONFIG.courts.court2.daysAhead
+        } days from CR today)`,
+        "DEBUG"
+      );
     } else {
       log("ERROR: Test mode requires --target-date parameter", "ERROR");
       process.exit(1);
@@ -794,7 +819,7 @@ async function main() {
       } catch (error) {
         errors.push({
           court: "Court 1",
-          error: error.message,
+          error: (error as Error).message,
         });
       }
     }
@@ -815,7 +840,7 @@ async function main() {
       } catch (error) {
         errors.push({
           court: "Court 2",
-          error: error.message,
+          error: (error as Error).message,
         });
       }
     }
@@ -862,11 +887,12 @@ async function main() {
       process.exit(1);
     }
   } catch (error) {
-    log(`FATAL ERROR: ${error.message}`, "ERROR");
-    log(`Stack trace: ${error.stack}`, "ERROR");
+    const err = error as Error;
+    log(`FATAL ERROR: ${err.message}`, "ERROR");
+    log(`Stack trace: ${err.stack}`, "ERROR");
     await sendEmail(
       "Reservation Script Error ❌",
-      `Fatal error occurred:\n\n${error.stack}`
+      `Fatal error occurred:\n\n${err.stack}`
     );
     cleanupScreenshots();
     process.exit(1);
@@ -881,7 +907,7 @@ async function main() {
 
 // Run the script
 main().catch((error) => {
-  log(`Unhandled error: ${error.message}`, "ERROR");
+  log(`Unhandled error: ${(error as Error).message}`, "ERROR");
   cleanupScreenshots();
   process.exit(1);
 });
