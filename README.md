@@ -5,7 +5,7 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 ## 🎯 What It Does
 
 **Automatically reserves:**
-- **Court 1** on Tuesdays & Fridays at 6:00 AM, Saturdays at 9:00 AM
+- **Court 1** on Tuesdays & Fridays at 6:00 AM, Saturdays at 9:00 AM, Sundays at 9:00 AM
 - **Court 2** on Tuesdays & Fridays at 7:00 AM
 
 **How it works:**
@@ -15,6 +15,21 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 - **Court 2**: 8 days ahead
 - Sends email confirmation via Resend API
 
+**Technology:**
+- Built with **TypeScript** for type safety and maintainability
+- Uses **Puppeteer** for browser automation
+- **Resend API** for email notifications
+- Timezone-aware using Costa Rica time (UTC-6)
+
+## 📚 Documentation Guide
+
+This repository has multiple documentation files for different purposes:
+
+- **README.md** (this file) - User-facing setup and usage guide
+- **CLAUDE.md** - Comprehensive technical reference for developers and AI assistants
+- **NEXT_STEPS.md** - Future improvements and enhancement roadmap
+- **reservation_flow_documentation.md** - Website structure and navigation reference
+
 ## 📋 Setup Instructions
 
 ### 1. Install Dependencies
@@ -23,7 +38,21 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 npm install
 ```
 
-### 2. Get Resend API Key
+### 2. Build TypeScript
+
+The project is written in TypeScript and must be compiled to JavaScript before running:
+
+```bash
+npm run build
+```
+
+This compiles:
+- `scripts/reserve.ts` → `dist/scripts/reserve.js`
+- `src/*.ts` → `dist/*.js`
+
+**Note:** You need to rebuild after any code changes.
+
+### 3. Get Resend API Key
 
 To send email notifications, you need a Resend API key:
 
@@ -32,7 +61,7 @@ To send email notifications, you need a Resend API key:
 3. Give it a name (e.g., "Tennis Reservations")
 4. Copy the API key (starts with `re_`)
 
-### 3. Configure Environment Variables
+### 4. Configure Environment Variables
 
 Copy the example file:
 
@@ -52,7 +81,7 @@ FROM_EMAIL_ADDRESS=contact@yourdomain.com
 
 **Note:** Your Resend domain must be verified to send emails.
 
-### 4. Test the Setup
+### 5. Test the Setup
 
 Before going live, test with available dates:
 
@@ -60,11 +89,12 @@ Before going live, test with available dates:
 # Dry run (shows what would be reserved without actually doing it)
 npm run reserve:dry-run
 
-# Test with specific date
+# Test with specific date (debug mode with screenshots)
 npm run reserve:debug -- --target-date 2025-10-15 --court1-time "06:00 AM - 07:00 AM" --skip-court2
 ```
 
 This will:
+- Build TypeScript automatically (via npm scripts)
 - Take screenshots at each step (saved to `screenshots/`)
 - Show detailed logs
 - Send you an email with results
@@ -117,9 +147,9 @@ Screenshots are saved to `screenshots/{timestamp}/` and automatically deleted af
 
 ## 🔧 Configuration
 
-Edit `scripts/reserve.js` to customize court schedules:
+Edit `scripts/reserve.ts` to customize court schedules:
 
-```javascript
+```typescript
 courts: {
   court1: {
     areaId: '5',
@@ -128,7 +158,8 @@ courts: {
     slots: {
       'Tuesday': '06:00 AM - 07:00 AM',
       'Friday': '06:00 AM - 07:00 AM',
-      'Saturday': '09:00 AM - 10:00 AM'
+      'Saturday': '09:00 AM - 10:00 AM',
+      'Sunday': '09:00 AM - 10:00 AM'
       // Add more days as needed
     }
   },
@@ -143,6 +174,11 @@ courts: {
     }
   }
 }
+```
+
+**After making changes, rebuild:**
+```bash
+npm run build
 ```
 
 **Available days:** `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday`
@@ -180,11 +216,15 @@ You'll receive emails for:
 - ✅ **Successful reservations** - with court, date, and time details
 - ⚠️ **Partial success** - some courts reserved, others failed
 - ❌ **Failed reservations** - with specific error messages:
+  - `SUCCESS`: Reservation confirmed
   - `DATE_NOT_AVAILABLE`: Date not in booking window yet
-  - `DATE_NOT_CLICKABLE`: Date exists but not clickable (fully booked)
+  - `DATE_NOT_AVAILABLE_YET`: Date not open for reservations yet
+  - `DATE_FULLY_BOOKED`: All time slots taken for that date
+  - `DATE_NOT_CLICKABLE`: Date exists but not clickable (unknown reason)
   - `SLOT_TAKEN`: Time slot already reserved by someone else
   - `RESERVATION_LIMIT`: You've exceeded your reservation limit
   - `TIME_SLOT_NOT_FOUND`: Requested time not available
+  - `UNKNOWN_ERROR`: Could not classify the server response
 
 ### Debug Screenshots
 
@@ -229,25 +269,42 @@ Screenshots are automatically deleted after the email is sent to save storage.
 
 ```
 tennis-reservation/
+├── src/                        # TypeScript source files
+│   ├── types.ts                # Type definitions
+│   ├── time-cr.ts              # Costa Rica timezone utilities
+│   └── error-detection.ts      # Error detection logic
 ├── scripts/
-│   └── reserve.js              # Main reservation script
+│   ├── reserve.ts              # Main reservation script (TypeScript)
+│   └── diagnose-dates.js       # Timezone diagnostic tool
+├── dist/                       # Compiled JavaScript (gitignored)
+│   ├── src/
+│   │   ├── types.js
+│   │   ├── time-cr.js
+│   │   └── error-detection.js
+│   └── scripts/
+│       └── reserve.js          # Compiled from reserve.ts
 ├── logs/                       # Auto-generated log files
 ├── screenshots/                # Debug screenshots (auto-cleaned)
+├── .env                        # Environment variables (gitignored)
 ├── .env.example                # Environment variables template
+├── tsconfig.json               # TypeScript configuration
 ├── package.json                # Dependencies and npm scripts
-├── .gitignore                  # Git ignore file
-├── README.md                   # This file
-└── reservation_flow_documentation.md  # Complete navigation flow reference
+├── .gitignore                  # Git ignore rules
+├── README.md                   # This file (user guide)
+├── CLAUDE.md                   # Technical documentation for developers/AI
+├── NEXT_STEPS.md               # Future improvements roadmap
+└── reservation_flow_documentation.md  # Website navigation reference
 ```
 
 ## 🔒 Security
 
 - ✅ All credentials in environment variables (never committed to git)
-- ✅ `.env` file is gitignored
+- ✅ `.env` file is gitignored and should have `chmod 600` permissions
 - ✅ Passwords never appear in logs
 - ✅ Browser runs in headless mode (no UI)
 - ✅ Resend API for secure email delivery
 - ✅ Screenshots auto-deleted after email sent
+- ⚠️ **Production recommendation**: Use 1Password CLI or similar vault for secrets (see `NEXT_STEPS.md`)
 
 ## 💰 Cost
 
@@ -292,6 +349,7 @@ cd ~
 git clone https://github.com/yourusername/tennis-reservation.git
 cd tennis-reservation
 npm install
+npm run build  # Compile TypeScript
 ```
 
 ### Step 3: Configure Environment
@@ -311,85 +369,52 @@ TO_EMAIL_ADDRESS=your@email.com
 FROM_EMAIL_ADDRESS=contact@yourdomain.com
 ```
 
-Save and load:
+**Secure the file:**
 
 ```bash
-source .env
+chmod 600 .env  # Only owner can read/write
 ```
 
-### Step 4: Add to ~/.bashrc
+**Note:** The script reads `.env` automatically via `dotenv`. No need to add to `~/.bashrc`.
 
-So cron can access environment variables:
+**For production:** Consider using 1Password CLI or similar vault instead of plain `.env` file (see `NEXT_STEPS.md`).
 
-```bash
-nano ~/.bashrc
-```
-
-Add at the bottom:
+### Step 4: Test
 
 ```bash
-# Tennis Reservation System
-export TENNIS_USERNAME='your_username'
-export TENNIS_PASSWORD='your_password'
-export RESEND_API_KEY='re_xxxxxxxxxxxxxxxxxxxxx'
-export TO_EMAIL_ADDRESS='your@email.com'
-export FROM_EMAIL_ADDRESS='contact@yourdomain.com'
-```
-
-Reload:
-
-```bash
-source ~/.bashrc
-```
-
-### Step 5: Test
-
-```bash
-node scripts/reserve.js --dry-run
+npm run reserve:dry-run
 ```
 
 You should see what would be reserved (if anything) without actually making reservations.
 
-### Step 6: Setup Cron Job
+### Step 5: Setup Cron Jobs
 
 ```bash
 crontab -e
 ```
 
-Add this line (runs at 11:58 PM Costa Rica time = 5:58 AM UTC):
+Add these lines:
 
 ```bash
-58 5 * * * cd /home/yourusername/tennis-reservation && /usr/bin/node scripts/reserve.js >> /home/yourusername/tennis-reservation/logs/cron.log 2>&1
+# Clean up old logs daily at 3 AM UTC (9 PM Costa Rica)
+0 3 * * * find /home/yourusername/tennis-reservation/logs/ -name "reservation-*.log" -mtime +30 -delete && find /home/yourusername/tennis-reservation/logs/ -name "cron.log" -mtime +90 -delete
+
+# Run reservation script at 11:58 PM Costa Rica time (5:58 AM UTC)
+58 5 * * * /path/to/node /home/yourusername/tennis-reservation/dist/scripts/reserve.js >> /home/yourusername/tennis-reservation/logs/cron.log 2>&1
 ```
 
-Save and exit. Verify:
+**Find your Node.js path:**
+```bash
+which node
+# Example output: /home/yourusername/.nvm/versions/node/v22.20.0/bin/node
+```
 
+Use that full path in the cron job.
+
+**Verify cron is set:**
 ```bash
 crontab -l
 ```
-
-### Step 7: Setup Log Rotation
-
-Prevent logs from growing indefinitely:
-
-```bash
-sudo nano /etc/logrotate.d/tennis-reservation
-```
-
-Add:
-
-```
-/home/yourusername/tennis-reservation/logs/*.log {
-    daily
-    rotate 30
-    compress
-    missingok
-    notifempty
-    create 0644 yourusername yourusername
-}
-```
-
-This keeps 30 days of compressed logs (~50-100 KB total).
 
 ### Monitoring
 
@@ -417,16 +442,18 @@ To pull latest code:
 cd ~/tennis-reservation
 git pull
 npm install  # if dependencies changed
+npm run build  # rebuild TypeScript
 ```
 
-No need to restart - cron will use updated code on next run.
+No need to restart - cron will use updated compiled code on next run.
 
 ## 📝 Notes
 
 - The script books **both courts back-to-back** on Tuesdays/Fridays for a 2-hour play window
-- Saturday only books Court 1 at 9 AM
-- Adjust schedules anytime by editing `scripts/reserve.js`
+- Saturday and Sunday book Court 1 at 9 AM
+- Adjust schedules anytime by editing `scripts/reserve.ts` (remember to rebuild!)
 - Timing is critical - script uses Costa Rica timezone (UTC-6)
+- Built with TypeScript for maintainability and type safety
 
 ## 🙋 Support
 

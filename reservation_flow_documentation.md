@@ -1,7 +1,14 @@
 # Parques del Sol Reservation System - Complete Navigation Flow
 
 ## Overview
-This document provides a complete reference guide for automating the reservation system at https://parquesdelsol.sasweb.net/
+This document provides a complete **technical reference** for the website structure and navigation flow at https://parquesdelsol.sasweb.net/
+
+**Purpose:**
+- Reference for understanding the website's iframe structure
+- Selector documentation for automation
+- Navigation flow for debugging
+
+**Note:** Screenshots referenced in this document were captured during initial development and are not included in the repository. The selectors and structure documented here are still accurate as of October 2025.
 
 ---
 
