@@ -55,10 +55,10 @@ const CONFIG: AppConfig = {
       name: "Cancha de Tenis 1",
       daysAhead: 9, // Court 1 becomes available 9 days in advance
       slots: {
+        Monday: "06:00 AM - 07:00 AM",  // Testing midnight fix - Oct 11 → Oct 20 (Monday)
         Tuesday: "06:00 AM - 07:00 AM",
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
-        Sunday: "09:00 AM - 10:00 AM",  // Testing cron - will try to reserve Oct 19
       },
     },
     court2: {
@@ -688,77 +688,29 @@ async function main(): Promise<void> {
     // Initialize screenshot session if in debug mode
     initScreenshotSession();
 
-    // Calculate target dates using COSTA RICA time (fixes timezone bug!)
-    const today = crMidnight(); // ← THE FIX: Use CR timezone, not system timezone
-
-    // Log timezone info for debugging
-    const systemNow = new Date();
-    const crNow = nowInCR();
-    log(`System time: ${systemNow.toISOString()}`, "DEBUG");
-    log(`Costa Rica time: ${crNow.toISOString()}`, "DEBUG");
-    log(`Today (CR): ${today.toDateString()}`, "DEBUG");
-
-    let targetDateCourt1, targetDateCourt2;
+    // Target date calculation - different timing for test vs production
+    let targetDateCourt1: Date | null = null;
+    let targetDateCourt2: Date | null = null;
 
     if (ARGS.test && ARGS.targetDate) {
-      // Test mode with specific date
+      // Test mode with specific date - calculate immediately
       const [year, month, day] = ARGS.targetDate.split("-").map(Number);
       targetDateCourt1 = new Date(year, month - 1, day);
       targetDateCourt2 = new Date(year, month - 1, day);
       log(`TEST MODE: Using date ${ARGS.targetDate}`);
+
+      // Show info for test mode
+      const dayOfWeek1 = getDayOfWeek(targetDateCourt1);
+      const dayOfWeek2 = getDayOfWeek(targetDateCourt2);
+      log(`Court 1 target: ${targetDateCourt1.toDateString()} (${dayOfWeek1})`);
+      log(`Court 2 target: ${targetDateCourt2.toDateString()} (${dayOfWeek2})`);
     } else if (!ARGS.test) {
-      // Production mode: calculate rolling window using CR timezone
-      targetDateCourt1 = addDaysCR(today, CONFIG.courts.court1.daysAhead);
-      targetDateCourt2 = addDaysCR(today, CONFIG.courts.court2.daysAhead);
-      log(
-        `Production target Court 1: ${ymdCR(targetDateCourt1)} (${
-          CONFIG.courts.court1.daysAhead
-        } days from CR today)`,
-        "DEBUG"
-      );
-      log(
-        `Production target Court 2: ${ymdCR(targetDateCourt2)} (${
-          CONFIG.courts.court2.daysAhead
-        } days from CR today)`,
-        "DEBUG"
-      );
+      // Production mode: Will calculate dates AFTER waiting for midnight
+      // This ensures we use the correct "today" value (Oct 10), not the stale value from 11:58 PM (Oct 9)
+      log("Production mode: Target dates will be calculated after midnight", "DEBUG");
     } else {
       log("ERROR: Test mode requires --target-date parameter", "ERROR");
       process.exit(1);
-    }
-
-    const dayOfWeek1 = getDayOfWeek(targetDateCourt1);
-    const dayOfWeek2 = getDayOfWeek(targetDateCourt2);
-
-    log(`Today: ${today.toDateString()}`);
-    log(`Court 1 target: ${targetDateCourt1.toDateString()} (${dayOfWeek1})`);
-    log(`Court 2 target: ${targetDateCourt2.toDateString()} (${dayOfWeek2})`);
-
-    // Check if we need to make reservations
-    const court1TimeSlot =
-      ARGS.court1Time || CONFIG.courts.court1.slots[dayOfWeek1];
-    const court2TimeSlot =
-      ARGS.court2Time || CONFIG.courts.court2.slots[dayOfWeek2];
-
-    const shouldReserveCourt1 = court1TimeSlot && !ARGS.skipCourt1;
-    const shouldReserveCourt2 = court2TimeSlot && !ARGS.skipCourt2;
-
-    if (!shouldReserveCourt1 && !shouldReserveCourt2) {
-      log("No reservations needed for these dates");
-      return;
-    }
-
-    if (ARGS.dryRun) {
-      log("=== DRY RUN MODE - NO ACTUAL RESERVATIONS WILL BE MADE ===");
-      if (shouldReserveCourt1)
-        log(
-          `Would reserve: Court 1 on ${targetDateCourt1.toDateString()} at ${court1TimeSlot}`
-        );
-      if (shouldReserveCourt2)
-        log(
-          `Would reserve: Court 2 on ${targetDateCourt2.toDateString()} at ${court2TimeSlot}`
-        );
-      return;
     }
 
     // Launch browser
@@ -787,6 +739,40 @@ async function main(): Promise<void> {
       } else {
         log("Already midnight, proceeding immediately");
       }
+
+      // NOW calculate target dates (fixes timezone bug!)
+      // By waiting until midnight, we ensure "today" is Oct 10, not Oct 9
+      const today = crMidnight();
+
+      // Log timezone info for debugging
+      const systemNow = new Date();
+      const crNow = nowInCR();
+      log(`System time: ${systemNow.toISOString()}`, "DEBUG");
+      log(`Costa Rica time: ${crNow.toISOString()}`, "DEBUG");
+      log(`Today (CR): ${today.toDateString()}`, "DEBUG");
+
+      targetDateCourt1 = addDaysCR(today, CONFIG.courts.court1.daysAhead);
+      targetDateCourt2 = addDaysCR(today, CONFIG.courts.court2.daysAhead);
+
+      log(
+        `Production target Court 1: ${ymdCR(targetDateCourt1)} (${
+          CONFIG.courts.court1.daysAhead
+        } days from CR today)`,
+        "DEBUG"
+      );
+      log(
+        `Production target Court 2: ${ymdCR(targetDateCourt2)} (${
+          CONFIG.courts.court2.daysAhead
+        } days from CR today)`,
+        "DEBUG"
+      );
+
+      const dayOfWeek1 = getDayOfWeek(targetDateCourt1);
+      const dayOfWeek2 = getDayOfWeek(targetDateCourt2);
+
+      log(`Today: ${today.toDateString()}`);
+      log(`Court 1 target: ${targetDateCourt1.toDateString()} (${dayOfWeek1})`);
+      log(`Court 2 target: ${targetDateCourt2.toDateString()} (${dayOfWeek2})`);
     } else if (ARGS.testDelay) {
       // Test mode with delay - simulate production timing
       const delaySeconds = parseInt(ARGS.testDelay, 10);
@@ -807,6 +793,41 @@ async function main(): Promise<void> {
     }
 
     // PHASE 2: Make reservations
+    // Safety check - ensure dates were calculated
+    if (!targetDateCourt1 || !targetDateCourt2) {
+      throw new Error("Target dates were not calculated - this should never happen");
+    }
+
+    // Calculate which days of week and time slots to use
+    const dayOfWeek1 = getDayOfWeek(targetDateCourt1);
+    const dayOfWeek2 = getDayOfWeek(targetDateCourt2);
+
+    const court1TimeSlot =
+      ARGS.court1Time || CONFIG.courts.court1.slots[dayOfWeek1];
+    const court2TimeSlot =
+      ARGS.court2Time || CONFIG.courts.court2.slots[dayOfWeek2];
+
+    const shouldReserveCourt1 = court1TimeSlot && !ARGS.skipCourt1;
+    const shouldReserveCourt2 = court2TimeSlot && !ARGS.skipCourt2;
+
+    if (!shouldReserveCourt1 && !shouldReserveCourt2) {
+      log("No reservations needed for these dates");
+      return;
+    }
+
+    if (ARGS.dryRun) {
+      log("=== DRY RUN MODE - NO ACTUAL RESERVATIONS WILL BE MADE ===");
+      if (shouldReserveCourt1)
+        log(
+          `Would reserve: Court 1 on ${targetDateCourt1.toDateString()} at ${court1TimeSlot}`
+        );
+      if (shouldReserveCourt2)
+        log(
+          `Would reserve: Court 2 on ${targetDateCourt2.toDateString()} at ${court2TimeSlot}`
+        );
+      return;
+    }
+
     if (shouldReserveCourt1) {
       log("--- Starting Court 1 Reservation ---");
       try {
