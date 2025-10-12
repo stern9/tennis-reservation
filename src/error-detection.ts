@@ -136,14 +136,27 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
     };
   }
 
-  // Normalize message for pattern matching
-  const msg = messageToCheck.toLowerCase().replace(/\s+/g, " ");
+  // Normalize message for robust pattern matching (remove diacritics, collapse whitespace)
+  const msg = messageToCheck
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove diacritics
+    .replace(/\s+/g, " ");
 
   // Pattern 1: Date not available yet (too far ahead)
-  // Example: "Esta fecha aún no está disponible para reservación. Las reservaciones serán habilitadas 8 días antes."
-  // NOTE: Website bug - shows "8 días" for Court 1 (should be 9), "7 días" for Court 2 (should be 8)
-  if (/aún\s+no\s+está\s+disponible/i.test(msg)) {
-    const daysMatch = msg.match(/(\d+)\s+días?\s+antes/);
+  // Examples observed or likely variants:
+  //  - "Esta fecha aún no está disponible para reservación. Las reservaciones serán habilitadas 8 días antes."
+  //  - "Esta fecha aun no esta disponible para reservacion."
+  //  - "Fecha no se encuentra habilitada para reservación"
+  //  - "Las reservaciones seran habilitadas 9 dias antes"
+  // NOTE: Website bug - shows "8 dias" for Court 1 (should be 9), "7 dias" for Court 2 (should be 8)
+  if (
+    (
+      /aun\s+no\s+esta\s+disponible/.test(msg) ||
+      /no\s+(esta|se\s+encuentra)\s+(disponible|habilitada)/.test(msg)
+    ) && /(reservacion|reservaciones)/.test(msg)
+  ) {
+    const daysMatch = msg.match(/(\d+)\s+dias?\s+(antes|previo|previos)/);
     return {
       type: "NOT_YET_AVAILABLE",
       message: "Not available yet",
@@ -156,9 +169,7 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
   // Pattern 2: Slot already taken (area capacity hit by others - race condition)
   // Example: "Su reservación excede la cantidad máxima... ya existen otras reservaciones"
   if (
-    /(ya\s+existen\s+otras\s+reservaciones|excede\s+la\s+cantidad\s+m[aá]xima)/i.test(
-      msg
-    )
+    /(ya\s+existen\s+otras\s+reservaciones|excede\s+la\s+cantidad\s+maxima)/.test(msg)
   ) {
     return {
       type: "SLOT_TAKEN",
@@ -171,9 +182,7 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
   // Pattern 3: Reservation limit exceeded (user quota reached)
   // Example: "No es posible ingresar la reservación, usted ya há sobrepasado el limite permitido"
   if (
-    /(ya\s*h[aá]\s*sobrepasado.*l[ií]mite|sobrepasado.*l[ií]mite\s+permitido)/i.test(
-      msg
-    )
+    /(ya\s*ha\s*sobrepasado.*limite|sobrepasado.*limite\s+permitido)/.test(msg)
   ) {
     return {
       type: "RESERVATION_LIMIT",
@@ -186,7 +195,7 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
 
   // Pattern 4: Success
   // Example: "Su reservación se ha realizado con éxito y ya se encuentra aprobada."
-  if (/se\s+ha\s+realizado.*éxito/i.test(msg)) {
+  if (/se\s+ha\s+realizado.*exito/.test(msg)) {
     return {
       type: "SUCCESS",
       message: "Reservation successful",

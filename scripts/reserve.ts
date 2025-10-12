@@ -401,7 +401,7 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
     const formattedDate = formatDateForUrl(targetDate);
 
     // Check if date is clickable
-    const dateStatus = await calendarFrame.evaluate((dateStr) => {
+    let dateStatus = await calendarFrame.evaluate((dateStr) => {
       const clickableCell = document.querySelector(
         `td.calendar-day_clickable[onclick*="${dateStr}"]`
       );
@@ -419,6 +419,52 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
       throw new Error(
         `DATE_NOT_AVAILABLE: Date ${targetDate.toDateString()} not found in calendar - may not be within booking window yet`
       );
+    }
+
+    // If date exists but is not yet clickable (midnight propagation delay),
+    // poll for up to 60s for the clickable class to appear
+    if (dateStatus === "not_clickable") {
+      log(`Date exists but not clickable yet, polling for up to 60s...`, "INFO");
+      const start = Date.now();
+      const maxWaitMs = 60000; // 60s grace period
+      const pollInterval = 2000; // Check every 2 seconds
+
+      while (Date.now() - start < maxWaitMs) {
+        await new Promise((r) => setTimeout(r, pollInterval));
+        const elapsed = Math.floor((Date.now() - start) / 1000);
+
+        // Log every 10 seconds so we see progress in logs
+        if (elapsed > 0 && elapsed % 10 === 0) {
+          log(`⏰ Still waiting for date to become clickable (${elapsed}s elapsed)...`, "INFO");
+        }
+
+        const status = await calendarFrame.evaluate((dateStr) => {
+          const clickableCell = document.querySelector(
+            `td.calendar-day_clickable[onclick*="${dateStr}"]`
+          );
+          if (clickableCell) return "clickable";
+          const anyCell = Array.from(document.querySelectorAll("td")).find((td) =>
+            td.getAttribute("onclick")?.includes(dateStr)
+          );
+          return anyCell ? "not_clickable" : "not_found";
+        }, formattedDate);
+
+        if (status === "clickable") {
+          log(`✅ Date became clickable after ${elapsed}s!`, "INFO");
+          dateStatus = status;
+          break;
+        } else if (status === "not_found") {
+          log(`Date disappeared from calendar after ${elapsed}s - this is unexpected`, "WARN");
+          dateStatus = status;
+          break;
+        }
+      }
+
+      // After loop, check if we timed out
+      if (dateStatus === "not_clickable") {
+        const elapsed = Math.floor((Date.now() - start) / 1000);
+        log(`⚠️ Date still not clickable after ${elapsed}s timeout`, "WARN");
+      }
     }
 
     if (dateStatus === "not_clickable") {
@@ -452,9 +498,12 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
             `DATE_FULLY_BOOKED: ${errorResult.message}`
           );
         } else {
-          // Date not clickable for unknown reason - use server's message
+          // Date not clickable for unknown reason - include raw message for diagnostics
+          const extra = errorResult.rawMessage
+            ? ` - Raw: "${errorResult.rawMessage}"`
+            : "";
           throw new Error(
-            `DATE_NOT_CLICKABLE: ${errorResult.message}`
+            `DATE_NOT_CLICKABLE: ${errorResult.message}${extra}`
           );
         }
       } catch (waitError) {
@@ -658,8 +707,11 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
           path.join(currentScreenshotSession || ".", "all-frames-unknown.txt")
         );
       }
+      const extra = errorResult.rawMessage
+        ? ` - Raw: "${errorResult.rawMessage}"`
+        : "";
       throw new Error(
-        `UNKNOWN_ERROR: Could not classify reservation response - ${errorResult.message}`
+        `UNKNOWN_ERROR: Could not classify reservation response - ${errorResult.message}${extra}`
       );
     }
   } catch (error) {
