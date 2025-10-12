@@ -55,8 +55,8 @@ const CONFIG: AppConfig = {
       name: "Cancha de Tenis 1",
       daysAhead: 9, // Court 1 becomes available 9 days in advance
       slots: {
-        Monday: "06:00 AM - 07:00 AM",  // Testing midnight fix - Oct 11 → Oct 20 (Monday)
         Tuesday: "06:00 AM - 07:00 AM",
+        Wednesday: "06:00 AM - 07:00 AM", // Testing 60s repoll fix - Oct 13 (Mon) → Oct 22 (Wed)
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
       },
