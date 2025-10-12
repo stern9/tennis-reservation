@@ -740,6 +740,12 @@ async function main(): Promise<void> {
         log("Already midnight, proceeding immediately");
       }
 
+      // Reload dashboard to get fresh server state after midnight
+      log("Reloading dashboard to refresh session state after midnight...", "DEBUG");
+      await loginPage.reload({ waitUntil: "networkidle2", timeout: 30000 });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      log("Dashboard reloaded with fresh midnight state", "DEBUG");
+
       // NOW calculate target dates (fixes timezone bug!)
       // By waiting until midnight, we ensure "today" is Oct 10, not Oct 9
       const today = crMidnight();
