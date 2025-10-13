@@ -22,7 +22,12 @@ import {
   dumpFrameContent,
   dumpAllFrames,
 } from "../src/error-detection";
-import type { CourtConfig, ReservationResult, AppConfig, Args } from "../src/types";
+import type {
+  CourtConfig,
+  ReservationResult,
+  AppConfig,
+  Args,
+} from "../src/types";
 
 // ============================================================================
 // CONFIGURATION
@@ -56,7 +61,7 @@ const CONFIG: AppConfig = {
       daysAhead: 9, // Court 1 becomes available 9 days in advance
       slots: {
         Tuesday: "06:00 AM - 07:00 AM",
-        Wednesday: "06:00 AM - 07:00 AM", // Testing 60s repoll fix - Oct 13 (Mon) → Oct 22 (Wed)
+        Thursday: "06:00 AM - 07:00 AM", // Testing
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
       },
@@ -67,6 +72,7 @@ const CONFIG: AppConfig = {
       daysAhead: 8, // Court 2 becomes available 8 days in advance
       slots: {
         Tuesday: "07:00 AM - 08:00 AM",
+        Wednesday: "07:00 AM - 08:00 AM", // Testing
         Friday: "07:00 AM - 08:00 AM",
       },
     },
@@ -168,10 +174,16 @@ async function takeScreenshot(page: Page, name: string): Promise<void> {
 
   try {
     const filepath = path.join(currentScreenshotSession, `${name}.png`);
-    await page.screenshot({ path: filepath as `${string}.png`, fullPage: true });
+    await page.screenshot({
+      path: filepath as `${string}.png`,
+      fullPage: true,
+    });
     log(`Screenshot saved: ${name}.png`, "DEBUG");
   } catch (error) {
-    log(`Failed to take screenshot ${name}: ${(error as Error).message}`, "WARN");
+    log(
+      `Failed to take screenshot ${name}: ${(error as Error).message}`,
+      "WARN"
+    );
   }
 }
 
@@ -232,7 +244,11 @@ function waitUntilMidnight(): Promise<void> {
 // EMAIL NOTIFICATION
 // ============================================================================
 
-async function sendEmail(subject: string, body: string, attachScreenshots: boolean = false): Promise<void> {
+async function sendEmail(
+  subject: string,
+  body: string,
+  attachScreenshots: boolean = false
+): Promise<void> {
   if (!CONFIG.resendApiKey) {
     log("RESEND_API_KEY not configured, skipping email notification", "WARN");
     return;
@@ -269,7 +285,7 @@ async function sendEmail(subject: string, body: string, attachScreenshots: boole
 }
 
 // ============================================================================
-// PHASE 1: LOGIN (at 11:58pm)
+// PHASE 1: LOGIN (at midnight)
 // ============================================================================
 
 async function loginPhase(browser: Browser): Promise<Page> {
@@ -348,7 +364,12 @@ async function loginPhase(browser: Browser): Promise<Page> {
 // PHASE 2: RESERVE (at 12:00am or immediately in test mode)
 // ============================================================================
 
-async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Date, timeSlot: string): Promise<ReservationResult> {
+async function reservePhase(
+  page: Page,
+  courtConfig: CourtConfig,
+  targetDate: Date,
+  timeSlot: string
+): Promise<ReservationResult> {
   try {
     log(
       `🎾 Phase 2: Reserving ${
@@ -359,7 +380,9 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
     // Navigate to reservations
     log("Opening reservations modal...");
     await page.evaluate(() => {
-      const link = document.querySelector<HTMLAnchorElement>('a[href="pre_reservations.php"]');
+      const link = document.querySelector<HTMLAnchorElement>(
+        'a[href="pre_reservations.php"]'
+      );
       if (link) link.click();
     });
 
@@ -421,52 +444,8 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
       );
     }
 
-    // If date exists but is not yet clickable (midnight propagation delay),
-    // poll for up to 60s for the clickable class to appear
-    if (dateStatus === "not_clickable") {
-      log(`Date exists but not clickable yet, polling for up to 60s...`, "INFO");
-      const start = Date.now();
-      const maxWaitMs = 60000; // 60s grace period
-      const pollInterval = 2000; // Check every 2 seconds
-
-      while (Date.now() - start < maxWaitMs) {
-        await new Promise((r) => setTimeout(r, pollInterval));
-        const elapsed = Math.floor((Date.now() - start) / 1000);
-
-        // Log every 10 seconds so we see progress in logs
-        if (elapsed > 0 && elapsed % 10 === 0) {
-          log(`⏰ Still waiting for date to become clickable (${elapsed}s elapsed)...`, "INFO");
-        }
-
-        const status = await calendarFrame.evaluate((dateStr) => {
-          const clickableCell = document.querySelector(
-            `td.calendar-day_clickable[onclick*="${dateStr}"]`
-          );
-          if (clickableCell) return "clickable";
-          const anyCell = Array.from(document.querySelectorAll("td")).find((td) =>
-            td.getAttribute("onclick")?.includes(dateStr)
-          );
-          return anyCell ? "not_clickable" : "not_found";
-        }, formattedDate);
-
-        if (status === "clickable") {
-          log(`✅ Date became clickable after ${elapsed}s!`, "INFO");
-          dateStatus = status;
-          break;
-        } else if (status === "not_found") {
-          log(`Date disappeared from calendar after ${elapsed}s - this is unexpected`, "WARN");
-          dateStatus = status;
-          break;
-        }
-      }
-
-      // After loop, check if we timed out
-      if (dateStatus === "not_clickable") {
-        const elapsed = Math.floor((Date.now() - start) / 1000);
-        log(`⚠️ Date still not clickable after ${elapsed}s timeout`, "WARN");
-      }
-    }
-
+    // Since we login AFTER midnight, the date should already be clickable
+    // If it's not clickable, this is an error condition
     if (dateStatus === "not_clickable") {
       // Click on it anyway to get the error message
       const dateSelector = `td[onclick*="${formattedDate}"]`;
@@ -494,17 +473,13 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
           throw new Error(`DATE_NOT_AVAILABLE_YET: ${errorResult.message}`);
         } else if (errorResult.type === "SLOT_TAKEN") {
           // Date exists but all slots are taken
-          throw new Error(
-            `DATE_FULLY_BOOKED: ${errorResult.message}`
-          );
+          throw new Error(`DATE_FULLY_BOOKED: ${errorResult.message}`);
         } else {
           // Date not clickable for unknown reason - include raw message for diagnostics
           const extra = errorResult.rawMessage
             ? ` - Raw: "${errorResult.rawMessage}"`
             : "";
-          throw new Error(
-            `DATE_NOT_CLICKABLE: ${errorResult.message}${extra}`
-          );
+          throw new Error(`DATE_NOT_CLICKABLE: ${errorResult.message}${extra}`);
         }
       } catch (waitError) {
         // Re-throw if this is one of our intentional error types
@@ -575,7 +550,9 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
     });
 
     await reservationFrame.evaluate(() => {
-      const link = document.querySelector<HTMLAnchorElement>('a[href*="new_reservation.php"]');
+      const link = document.querySelector<HTMLAnchorElement>(
+        'a[href*="new_reservation.php"]'
+      );
       if (link) link.click();
     });
 
@@ -601,7 +578,9 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
 
     // Select time slot by visible text
     const selected = await formFrame.evaluate((targetSlot) => {
-      const select = document.getElementById("schedule") as HTMLSelectElement | null;
+      const select = document.getElementById(
+        "schedule"
+      ) as HTMLSelectElement | null;
       if (!select) return null;
 
       const [startTime, endTime] = targetSlot.split(" - ");
@@ -648,8 +627,11 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
     log("Waiting for result iframe...", "DEBUG");
 
     // Log all current frame URLs for debugging
-    const currentFrames = page.frames().map(f => f.url());
-    log(`Current frames before waiting: ${JSON.stringify(currentFrames)}`, "DEBUG");
+    const currentFrames = page.frames().map((f) => f.url());
+    log(
+      `Current frames before waiting: ${JSON.stringify(currentFrames)}`,
+      "DEBUG"
+    );
 
     let resultFrame;
     try {
@@ -657,9 +639,16 @@ async function reservePhase(page: Page, courtConfig: CourtConfig, targetDate: Da
       log(`Found result frame: ${resultFrame.url()}`, "DEBUG");
     } catch (waitError) {
       // Log all frames if waiting failed
-      const allFrames = page.frames().map(f => f.url());
-      log(`Failed to find result frame. All frames: ${JSON.stringify(allFrames)}`, "ERROR");
-      throw new Error(`Timed out waiting for reservation result frame: ${(waitError as Error).message}`);
+      const allFrames = page.frames().map((f) => f.url());
+      log(
+        `Failed to find result frame. All frames: ${JSON.stringify(allFrames)}`,
+        "ERROR"
+      );
+      throw new Error(
+        `Timed out waiting for reservation result frame: ${
+          (waitError as Error).message
+        }`
+      );
     }
 
     await takeScreenshot(page, "7-submission-result");
@@ -759,7 +748,10 @@ async function main(): Promise<void> {
     } else if (!ARGS.test) {
       // Production mode: Will calculate dates AFTER waiting for midnight
       // This ensures we use the correct "today" value (Oct 10), not the stale value from 11:58 PM (Oct 9)
-      log("Production mode: Target dates will be calculated after midnight", "DEBUG");
+      log(
+        "Production mode: Target dates will be calculated after midnight",
+        "DEBUG"
+      );
     } else {
       log("ERROR: Test mode requires --target-date parameter", "ERROR");
       process.exit(1);
@@ -777,9 +769,6 @@ async function main(): Promise<void> {
 
     browser = await puppeteer.launch(launchOptions);
 
-    // PHASE 1: Login (at 11:58pm in production, immediate in test mode)
-    const loginPage = await loginPhase(browser);
-
     // Wait for midnight if not in test mode
     if (!ARGS.test) {
       const crTime = getCostaRicaTime();
@@ -792,14 +781,21 @@ async function main(): Promise<void> {
         log("Already midnight, proceeding immediately");
       }
 
-      // Reload dashboard to get fresh server state after midnight
-      log("Reloading dashboard to refresh session state after midnight...", "DEBUG");
-      await loginPage.reload({ waitUntil: "networkidle2", timeout: 30000 });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      log("Dashboard reloaded with fresh midnight state", "DEBUG");
+      // Wait 5 seconds after midnight to let server finish processing
+      log(
+        "Waiting 5 seconds for server to finish midnight processing...",
+        "DEBUG"
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
 
-      // NOW calculate target dates (fixes timezone bug!)
-      // By waiting until midnight, we ensure "today" is Oct 10, not Oct 9
+    // PHASE 1: Login (at midnight in production, immediate in test mode)
+    // By logging in AFTER midnight, we get fresh calendar page with new dates already clickable
+    const loginPage = await loginPhase(browser);
+
+    // Calculate target dates (only in production mode, after midnight)
+    if (!ARGS.test) {
+      // By waiting until midnight before login, we ensure "today" is correct (e.g., Oct 13, not Oct 12)
       const today = crMidnight();
 
       // Log timezone info for debugging
@@ -853,7 +849,9 @@ async function main(): Promise<void> {
     // PHASE 2: Make reservations
     // Safety check - ensure dates were calculated
     if (!targetDateCourt1 || !targetDateCourt2) {
-      throw new Error("Target dates were not calculated - this should never happen");
+      throw new Error(
+        "Target dates were not calculated - this should never happen"
+      );
     }
 
     // Calculate which days of week and time slots to use

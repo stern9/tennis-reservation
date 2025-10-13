@@ -9,8 +9,9 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 - **Court 2** on Tuesdays & Fridays at 7:00 AM
 
 **How it works:**
-- **11:58 PM Costa Rica time**: Script starts and logs in
-- **12:00 AM**: New dates become available, script immediately reserves
+- **11:58 PM Costa Rica time**: Script starts, waits for midnight
+- **12:00 AM**: Logs in to get fresh calendar with new dates
+- **12:00:05 AM**: Immediately reserves courts (no waiting for date propagation)
 - **Court 1**: 9 days ahead
 - **Court 2**: 8 days ahead
 - Sends email confirmation via Resend API
@@ -220,7 +221,7 @@ You'll receive emails for:
   - `DATE_NOT_AVAILABLE`: Date not in booking window yet
   - `DATE_NOT_AVAILABLE_YET`: Date not open for reservations yet
   - `DATE_FULLY_BOOKED`: All time slots taken for that date
-  - `DATE_NOT_CLICKABLE`: Date exists but not clickable (unknown reason)
+  - `DATE_NOT_CLICKABLE`: Date exists but not clickable (should not occur with current fix)
   - `SLOT_TAKEN`: Time slot already reserved by someone else
   - `RESERVATION_LIMIT`: You've exceeded your reservation limit
   - `TIME_SLOT_NOT_FOUND`: Requested time not available
