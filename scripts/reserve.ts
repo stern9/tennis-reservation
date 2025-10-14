@@ -423,84 +423,9 @@ async function reservePhase(
 
     const formattedDate = formatDateForUrl(targetDate);
 
-    // Check if date is clickable
-    let dateStatus = await calendarFrame.evaluate((dateStr) => {
-      const clickableCell = document.querySelector(
-        `td.calendar-day_clickable[onclick*="${dateStr}"]`
-      );
-      if (clickableCell) return "clickable";
-
-      const anyCell = Array.from(document.querySelectorAll("td")).find((td) =>
-        td.getAttribute("onclick")?.includes(dateStr)
-      );
-      if (anyCell) return "not_clickable";
-
-      return "not_found";
-    }, formattedDate);
-
-    if (dateStatus === "not_found") {
-      throw new Error(
-        `DATE_NOT_AVAILABLE: Date ${targetDate.toDateString()} not found in calendar - may not be within booking window yet`
-      );
-    }
-
-    // Since we login AFTER midnight, the date should already be clickable
-    // If it's not clickable, this is an error condition
-    if (dateStatus === "not_clickable") {
-      // Click on it anyway to get the error message
-      const dateSelector = `td[onclick*="${formattedDate}"]`;
-      await calendarFrame.click(dateSelector);
-
-      // Wait for response iframe using new event-driven approach
-      try {
-        const resultFrame = await waitForReservationIframe(page, {
-          timeout: 8000,
-        });
-        const errorResult = await detectError(resultFrame);
-
-        // Dump frame content for debugging
-        if (ARGS.debugMode) {
-          await dumpFrameContent(
-            resultFrame,
-            path.join(
-              currentScreenshotSession || ".",
-              "error-date-not-clickable.txt"
-            )
-          );
-        }
-
-        if (errorResult.type === "NOT_YET_AVAILABLE") {
-          throw new Error(`DATE_NOT_AVAILABLE_YET: ${errorResult.message}`);
-        } else if (errorResult.type === "SLOT_TAKEN") {
-          // Date exists but all slots are taken
-          throw new Error(`DATE_FULLY_BOOKED: ${errorResult.message}`);
-        } else {
-          // Date not clickable for unknown reason - include raw message for diagnostics
-          const extra = errorResult.rawMessage
-            ? ` - Raw: "${errorResult.rawMessage}"`
-            : "";
-          throw new Error(`DATE_NOT_CLICKABLE: ${errorResult.message}${extra}`);
-        }
-      } catch (waitError) {
-        // Re-throw if this is one of our intentional error types
-        const errorMsg = (waitError as Error).message;
-        if (
-          errorMsg.startsWith("DATE_NOT_AVAILABLE_YET:") ||
-          errorMsg.startsWith("DATE_FULLY_BOOKED:") ||
-          errorMsg.startsWith("DATE_NOT_CLICKABLE:")
-        ) {
-          throw waitError;
-        }
-
-        // If no response frame appeared at all, date is not clickable without explanation
-        throw new Error(
-          `DATE_NOT_CLICKABLE: Date ${targetDate.toDateString()} exists in calendar but is not clickable (no server response - may be fully booked or disabled)`
-        );
-      }
-    }
-
-    log("Date is clickable, proceeding...");
-    const dateSelector = `td.calendar-day_clickable[onclick*="${formattedDate}"]`;
+    // Click the date - since we login AFTER midnight, dates are already clickable
+    log("Clicking date...");
+    const dateSelector = `td[onclick*="${formattedDate}"]`;
     await calendarFrame.click(dateSelector);
 
     await new Promise((resolve) => setTimeout(resolve, 5000));
