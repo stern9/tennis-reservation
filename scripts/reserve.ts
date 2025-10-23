@@ -73,6 +73,7 @@ const CONFIG: AppConfig = {
       slots: {
         Tuesday: "07:00 AM - 08:00 AM",
         Friday: "07:00 AM - 08:00 AM",
+        Saturday: "09:00 AM - 10:00 AM", // Test new changes
       },
     },
   },
@@ -499,6 +500,7 @@ async function reservePhase(
     const allFrames = page.frames();
     let reservationFrame = null;
 
+    // Try to find a frame with "Solicitar Reserva" (date is available)
     for (const f of allFrames) {
       const url = f.url();
       if (
@@ -527,8 +529,36 @@ async function reservePhase(
       }
     }
 
+    // If we didn't find "Solicitar Reserva", check all frames for "date not available" message
     if (!reservationFrame) {
-      throw new Error("Could not find day view iframe");
+      let foundUnavailableMessage = false;
+      for (const f of allFrames) {
+        try {
+          const text = await f.evaluate(() =>
+            document.body.innerText.toLowerCase()
+          );
+          if (
+            text.includes("aún no está disponible") ||
+            text.includes("aun no esta disponible") ||
+            text.includes("no se encuentra habilitada") ||
+            text.includes("serán habilitadas") ||
+            text.includes("seran habilitadas")
+          ) {
+            foundUnavailableMessage = true;
+            break;
+          }
+        } catch (e) {
+          // Skip frames we can't access
+        }
+      }
+
+      if (foundUnavailableMessage) {
+        throw new Error(
+          "DATE_NOT_AVAILABLE_YET - Date not available for reservation yet"
+        );
+      } else {
+        throw new Error("Could not find day view iframe");
+      }
     }
 
     await takeScreenshot(page, "5-day-view");
@@ -710,7 +740,8 @@ async function main(): Promise<void> {
   );
 
   const results: ReservationResult[] = [];
-  const errors: { court: string; error: string }[] = [];
+  const errors: { court: string; date: string; time: string; error: string }[] =
+    [];
   let browser: Browser | undefined;
 
   try {
@@ -885,6 +916,8 @@ async function main(): Promise<void> {
       } catch (error) {
         errors.push({
           court: "Court 1",
+          date: targetDateCourt1.toDateString(),
+          time: court1TimeSlot,
           error: (error as Error).message,
         });
       }
@@ -906,6 +939,8 @@ async function main(): Promise<void> {
       } catch (error) {
         errors.push({
           court: "Court 2",
+          date: targetDateCourt2.toDateString(),
+          time: court2TimeSlot,
           error: (error as Error).message,
         });
       }
@@ -925,9 +960,9 @@ async function main(): Promise<void> {
     if (errors.length > 0) {
       emailBody += "FAILED RESERVATIONS:\n";
       errors.forEach((e) => {
-        emailBody += `❌ ${e.court} - ${e.error}\n`;
+        emailBody += `❌ ${e.court} - ${e.date} at ${e.time}\n`;
+        emailBody += `   Error: ${e.error}\n\n`;
       });
-      emailBody += "\n";
     }
 
     emailBody += `\nRun time: ${new Date().toISOString()}`;
