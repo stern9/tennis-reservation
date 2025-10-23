@@ -72,7 +72,8 @@ const CONFIG: AppConfig = {
       daysAhead: 8, // Court 2 becomes available 8 days in advance
       slots: {
         Tuesday: "07:00 AM - 08:00 AM",
-        Friday: "07:00 AM - 08:00 AM",
+        // Friday: "07:00 AM - 08:00 AM",
+        Friday: "06:00 AM - 07:00 AM",
       },
     },
   },
