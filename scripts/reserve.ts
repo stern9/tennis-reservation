@@ -60,7 +60,7 @@ const CONFIG: AppConfig = {
       name: "Cancha de Tenis 1",
       daysAhead: 9, // Court 1 becomes available 9 days in advance
       slots: {
-        Monday: "06:00 AM - 07:00 AM", // Testing
+        Monday: "06:00 AM - 07:00 AM",
         Tuesday: "06:00 AM - 07:00 AM",
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
@@ -72,8 +72,7 @@ const CONFIG: AppConfig = {
       daysAhead: 8, // Court 2 becomes available 8 days in advance
       slots: {
         Tuesday: "07:00 AM - 08:00 AM",
-        // Friday: "07:00 AM - 08:00 AM",
-        Friday: "06:00 AM - 07:00 AM",
+        Friday: "07:00 AM - 08:00 AM",
       },
     },
   },
@@ -420,6 +419,70 @@ async function reservePhase(
     }
 
     await takeScreenshot(page, "4-calendar-view");
+
+    // Navigate to the correct month in the calendar if needed
+    // The calendar defaults to the current month, so if the target date is in a future month,
+    // we need to navigate there first by loading the correct URL
+    const targetMonth = targetDate.getMonth() + 1; // JavaScript month is 0-indexed, URL expects 1-indexed
+    const targetYear = targetDate.getFullYear();
+
+    // Check what month is currently displayed
+    const currentCalendarMonth = await calendarFrame.evaluate(() => {
+      const monthNames = [
+        "ENERO",
+        "FEBRERO",
+        "MARZO",
+        "ABRIL",
+        "MAYO",
+        "JUNIO",
+        "JULIO",
+        "AGOSTO",
+        "SEPTIEMBRE",
+        "OCTUBRE",
+        "NOVIEMBRE",
+        "DICIEMBRE",
+      ];
+      const headerText = document.body.innerText;
+      const monthMatch = headerText.match(
+        /(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(\d{4})/i
+      );
+      if (monthMatch) {
+        const monthIndex = monthNames.indexOf(monthMatch[1].toUpperCase()) + 1;
+        return { month: monthIndex, year: parseInt(monthMatch[2]) };
+      }
+      return null;
+    });
+
+    log(
+      `Calendar currently showing: ${currentCalendarMonth?.month}/${currentCalendarMonth?.year}, Target: ${targetMonth}/${targetYear}`,
+      "DEBUG"
+    );
+
+    // Only navigate if we're not already on the target month
+    if (
+      !currentCalendarMonth ||
+      currentCalendarMonth.month !== targetMonth ||
+      currentCalendarMonth.year !== targetYear
+    ) {
+      log(
+        `Navigating calendar to month ${targetMonth}/${targetYear}...`,
+        "DEBUG"
+      );
+
+      await calendarFrame.evaluate(
+        (month, year, areaId) => {
+          window.location.href = `reservations.php?month=${month}&year=${year}&area=${areaId}`;
+        },
+        targetMonth,
+        targetYear,
+        courtConfig.areaId
+      );
+
+      // Wait for calendar to reload with the correct month
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    } else {
+      log("Calendar already on target month, skipping navigation", "DEBUG");
+    }
 
     const formattedDate = formatDateForUrl(targetDate);
 
