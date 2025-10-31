@@ -73,7 +73,6 @@ const CONFIG: AppConfig = {
       slots: {
         Tuesday: "07:00 AM - 08:00 AM",
         Friday: "07:00 AM - 08:00 AM",
-        Saturday: "09:00 AM - 10:00 AM", // Test new changes
       },
     },
   },
