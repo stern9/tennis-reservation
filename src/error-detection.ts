@@ -5,7 +5,7 @@
  * the <!--APP::...::APP--> comment markers used by the SASWeb system.
  */
 
-import type { Page, Frame } from "puppeteer";
+import type { Page, Frame } from "playwright";
 import type { ErrorResult, FrameData } from "./types";
 import * as fs from "fs";
 import * as path from "path";
@@ -24,19 +24,27 @@ export async function waitForReservationIframe(
   // It can be either display_reservation.php (date clicks) or add_reservation.php (form submissions)
   const responseFramePattern = /(display_reservation|add_reservation)\.php/;
 
-  await page.waitForFrame((f) => responseFramePattern.test(f.url()), {
-    timeout,
-  });
+  // Playwright: Poll for frame with matching URL
+  const startTime = Date.now();
+  let frame: Frame | undefined;
 
-  const frame = page.frames().find((f) => responseFramePattern.test(f.url()));
+  while (!frame && Date.now() - startTime < timeout) {
+    frame = page.frames().find(f => responseFramePattern.test(f.url()));
+    if (!frame) {
+      await new Promise(resolve => setTimeout(resolve, 100)); // Poll every 100ms
+    }
+  }
+
   if (!frame) {
     throw new Error("Reservation response iframe not found after wait");
   }
 
   // Wait for DOM to be ready
-  await frame
-    .waitForFunction(() => document.readyState === "complete", { timeout: 3000 })
-    .catch(() => {});
+  try {
+    await frame.waitForLoadState('domcontentloaded', { timeout: 3000 });
+  } catch {
+    // Ignore timeout, content might already be loaded
+  }
 
   // Small delay to ensure content is loaded (don't wait for APP marker as it's not always present)
   await new Promise((resolve) => setTimeout(resolve, 500));

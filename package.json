@@ -10,6 +10,9 @@
     "reserve:dry-run": "npm run build && node dist/scripts/reserve.js --dry-run",
     "reserve:debug": "npm run build && node dist/scripts/reserve.js --test --debug",
     "reserve:watch": "npm run build && node dist/scripts/reserve.js --test --debug --watch",
+    "reserve:shadow": "npm run build && node dist/scripts/reserve.js --test --shadow",
+    "reserve:canary": "npm run build && node dist/scripts/reserve.js --test --canary",
+    "reserve:mock-unlock": "npm run build && node dist/scripts/reserve.js --test --mock-unlock",
     "diagnose": "node scripts/diagnose-dates.js"
   },
   "keywords": [
@@ -21,7 +24,7 @@
   "license": "MIT",
   "dependencies": {
     "dotenv": "^17.2.3",
-    "puppeteer": "^24.23.0"
+    "playwright": "^1.45.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

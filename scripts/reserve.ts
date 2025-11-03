@@ -1,4 +1,4 @@
-import puppeteer, { Page, Browser } from "puppeteer";
+import { chromium, Browser, BrowserContext, Page } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import * as dotenv from "dotenv";
@@ -28,6 +28,8 @@ import type {
   AppConfig,
   Args,
 } from "../src/types";
+import * as SiteAdapter from "../src/site-adapter";
+import * as Engine from "../src/engine";
 
 // ============================================================================
 // CONFIGURATION
@@ -114,6 +116,17 @@ const ARGS: Args = {
     process.env.WATCH_MODE === "true" || process.argv.includes("--watch"),
   keepScreenshots: process.argv.includes("--keep-screenshots"),
   testDelay: getArgValue("--test-delay"), // Delay in seconds before phase 2
+  // New Playwright migration flags
+  shadowMode:
+    process.env.SHADOW_MODE === "1" || process.argv.includes("--shadow"),
+  canaryMode: process.argv.includes("--canary"),
+  mockUnlock: process.argv.includes("--mock-unlock"),
+  noBooking: process.argv.includes("--no-booking"),
+  sessionMode: (process.env.SESSION_MODE === "contexts" ? "contexts" : "single") as "single" | "contexts",
+  unlockMaxMs: parseInt(process.env.UNLOCK_MAX_MS || "15000", 10),
+  unlockPollMs: parseInt(process.env.UNLOCK_POLL_MS || "180", 10),
+  navMs: parseInt(process.env.NAV_MS || "1500", 10),
+  selMs: parseInt(process.env.SEL_MS || "1000", 10),
 };
 
 function getArgValue(argName: string): string | null {
@@ -294,7 +307,7 @@ async function loginPhase(browser: Browser): Promise<Page> {
     log("🔐 Phase 1: Logging in...");
 
     await page.goto(CONFIG.loginUrl, {
-      waitUntil: "networkidle2",
+      waitUntil: "networkidle",
       timeout: 30000,
     });
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -311,16 +324,16 @@ async function loginPhase(browser: Browser): Promise<Page> {
       const passInput = await page.$('input[type="password"]');
 
       if (textInput && passInput) {
-        await textInput.type(String(CONFIG.username));
-        await passInput.type(String(CONFIG.password));
+        await textInput.fill(String(CONFIG.username));
+        await passInput.fill(String(CONFIG.password));
       } else {
         throw new Error("Could not find login form inputs");
       }
     } else {
       log(`Filling username field with: ${CONFIG.username}`, "DEBUG");
-      await usernameInput.type(String(CONFIG.username));
+      await usernameInput.fill(String(CONFIG.username));
       log(`Filling password field`, "DEBUG");
-      await passwordInput.type(String(CONFIG.password));
+      await passwordInput.fill(String(CONFIG.password));
     }
 
     log("Credentials entered, clicking login button...");
@@ -367,8 +380,16 @@ async function reservePhase(
   page: Page,
   courtConfig: CourtConfig,
   targetDate: Date,
-  timeSlot: string
+  timeSlot: string,
+  t0Time?: number
 ): Promise<ReservationResult> {
+  const phaseTimer = Engine.createTimer();
+  const telemetry = {
+    unlockMs: 0,
+    formReadyMs: 0,
+    submitMs: 0,
+  };
+
   try {
     log(
       `🎾 Phase 2: Reserving ${
@@ -376,71 +397,43 @@ async function reservePhase(
       } on ${targetDate.toDateString()} at ${timeSlot}`
     );
 
-    // Navigate to reservations
-    log("Opening reservations modal...");
-    await page.evaluate(() => {
-      const link = document.querySelector<HTMLAnchorElement>(
-        'a[href="pre_reservations.php"]'
-      );
-      if (link) link.click();
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    // Select area in iframe
-    log(`Selecting ${courtConfig.name}...`);
-    await page.waitForSelector("iframe", { timeout: 10000 });
-
-    const frames = page.frames();
-    const frame = frames.find((f) => f.url().includes("pre_reservations.php"));
-
-    if (!frame) {
-      throw new Error("Could not find reservations iframe");
+    // T0 telemetry
+    if (t0Time) {
+      const t0Elapsed = Engine.formatMs(Date.now() - t0Time);
+      log(`⏱️  T0 offset: +${t0Elapsed}s from midnight`, "DEBUG");
     }
 
+    // Step 1: Open reservations modal and select area
+    log("Opening reservations modal...");
+    const modalFrame = await SiteAdapter.openReservationsModal(page);
     await takeScreenshot(page, "3-reservations-modal");
 
-    await frame.waitForSelector("#area", { timeout: 10000 });
-    await frame.select("#area", courtConfig.areaId);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    log(`Selecting ${courtConfig.name}...`);
+    await SiteAdapter.selectAreaAndContinue(modalFrame, courtConfig.areaId);
 
-    await frame.waitForSelector("input#btn_cont", { timeout: 5000 });
-    await frame.click("input#btn_cont");
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    // Step 2: Wait for calendar to load and find calendar frame
+    log("Waiting for calendar to load...");
+    await page.waitForTimeout(1000); // Brief wait for modal transition
 
-    // Click on date in calendar
-    log(`Selecting date: ${formatDateForUrl(targetDate)}...`);
-
+    const frames = page.frames();
     const calendarFrame = frames.find((f) =>
       f.url().includes("reservations.php")
     );
+
     if (!calendarFrame) {
       throw new Error("Could not find calendar iframe");
     }
 
     await takeScreenshot(page, "4-calendar-view");
 
-    // Navigate to the correct month in the calendar if needed
-    // The calendar defaults to the current month, so if the target date is in a future month,
-    // we need to navigate there first by loading the correct URL
-    const targetMonth = targetDate.getMonth() + 1; // JavaScript month is 0-indexed, URL expects 1-indexed
+    // Step 3: Navigate to correct month if needed
+    const targetMonth = targetDate.getMonth() + 1;
     const targetYear = targetDate.getFullYear();
 
-    // Check what month is currently displayed
     const currentCalendarMonth = await calendarFrame.evaluate(() => {
       const monthNames = [
-        "ENERO",
-        "FEBRERO",
-        "MARZO",
-        "ABRIL",
-        "MAYO",
-        "JUNIO",
-        "JULIO",
-        "AGOSTO",
-        "SEPTIEMBRE",
-        "OCTUBRE",
-        "NOVIEMBRE",
-        "DICIEMBRE",
+        "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+        "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
       ];
       const headerText = document.body.innerText;
       const monthMatch = headerText.match(
@@ -454,83 +447,84 @@ async function reservePhase(
     });
 
     log(
-      `Calendar currently showing: ${currentCalendarMonth?.month}/${currentCalendarMonth?.year}, Target: ${targetMonth}/${targetYear}`,
+      `Calendar showing: ${currentCalendarMonth?.month}/${currentCalendarMonth?.year}, Target: ${targetMonth}/${targetYear}`,
       "DEBUG"
     );
 
-    // Only navigate if we're not already on the target month
+    // Navigate to target month if needed
     if (
       !currentCalendarMonth ||
       currentCalendarMonth.month !== targetMonth ||
       currentCalendarMonth.year !== targetYear
     ) {
-      log(
-        `Navigating calendar to month ${targetMonth}/${targetYear}...`,
-        "DEBUG"
-      );
-
+      log(`Navigating to month ${targetMonth}/${targetYear}...`, "DEBUG");
       await calendarFrame.evaluate(
-        (month, year, areaId) => {
+        ({ month, year, areaId }: { month: number; year: number; areaId: string }) => {
           window.location.href = `reservations.php?month=${month}&year=${year}&area=${areaId}`;
         },
-        targetMonth,
-        targetYear,
-        courtConfig.areaId
+        { month: targetMonth, year: targetYear, areaId: courtConfig.areaId }
       );
-
-      // Wait for calendar to reload with the correct month
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    } else {
-      log("Calendar already on target month, skipping navigation", "DEBUG");
+      await calendarFrame.waitForLoadState("domcontentloaded");
     }
 
-    const formattedDate = formatDateForUrl(targetDate);
+    // Step 4: Poll for date unlock (replaces fixed delays)
+    log(`Polling for date ${formatDateForUrl(targetDate)} to become clickable...`);
+    const unlockStartTime = Date.now();
 
-    // Click the date - since we login AFTER midnight, dates are already clickable
-    log("Clicking date...");
+    try {
+      telemetry.unlockMs = await SiteAdapter.pollForDateUnlock({
+        page,
+        frame: calendarFrame,
+        targetDate,
+        pollIntervalMs: ARGS.unlockPollMs,
+        maxWaitMs: ARGS.unlockMaxMs,
+        onTick: (elapsed) => {
+          if (elapsed % 1000 === 0) {
+            log(`  Polling... ${Engine.formatMs(elapsed)}s elapsed`, "DEBUG");
+          }
+        },
+      });
+
+      log(
+        `✅ Date unlocked at T+${Engine.formatMs(
+          Date.now() - unlockStartTime
+        )}s`,
+        "SUCCESS"
+      );
+    } catch (unlockError) {
+      throw new Error(
+        `DATE_NOT_AVAILABLE_YET - ${(unlockError as Error).message}`
+      );
+    }
+
+    // Step 5: Click date
+    const formattedDate = formatDateForUrl(targetDate);
+    log(`Clicking date ${formattedDate}...`);
     const dateSelector = `td[onclick*="${formattedDate}"]`;
     await calendarFrame.click(dateSelector);
 
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // Navigate to nested iframe and request reservation
-    log("Opening reservation form...");
+    // Step 6: Wait for day view iframe
+    log("Waiting for day view...");
+    await page.waitForTimeout(500); // Brief wait for iframe to appear
 
     const allFrames = page.frames();
-    let reservationFrame = null;
+    let dayViewFrame = null;
 
-    // Try to find a frame with "Solicitar Reserva" (date is available)
+    // Find day view frame with "Solicitar Reserva"
     for (const f of allFrames) {
-      const url = f.url();
-      if (
-        url.includes("reservations.php") &&
-        !url.includes("pre_reservations")
-      ) {
+      try {
         const content = await f.content();
         if (content.includes("Solicitar Reserva")) {
-          reservationFrame = f;
+          dayViewFrame = f;
           break;
         }
+      } catch (e) {
+        // Skip inaccessible frames
       }
     }
 
-    if (!reservationFrame) {
-      for (const f of allFrames) {
-        try {
-          const content = await f.content();
-          if (content.includes("Solicitar Reserva")) {
-            reservationFrame = f;
-            break;
-          }
-        } catch (e) {
-          // Skip frames we can't access
-        }
-      }
-    }
-
-    // If we didn't find "Solicitar Reserva", check all frames for "date not available" message
-    if (!reservationFrame) {
-      let foundUnavailableMessage = false;
+    if (!dayViewFrame) {
+      // Check for "date not available" message
       for (const f of allFrames) {
         try {
           const text = await f.evaluate(() =>
@@ -539,49 +533,36 @@ async function reservePhase(
           if (
             text.includes("aún no está disponible") ||
             text.includes("aun no esta disponible") ||
-            text.includes("no se encuentra habilitada") ||
-            text.includes("serán habilitadas") ||
-            text.includes("seran habilitadas")
+            text.includes("no se encuentra habilitada")
           ) {
-            foundUnavailableMessage = true;
-            break;
+            throw new Error(
+              "DATE_NOT_AVAILABLE_YET - Date not available for reservation yet"
+            );
           }
         } catch (e) {
-          // Skip frames we can't access
+          if ((e as Error).message.includes("DATE_NOT_AVAILABLE_YET")) {
+            throw e;
+          }
         }
       }
-
-      if (foundUnavailableMessage) {
-        throw new Error(
-          "DATE_NOT_AVAILABLE_YET - Date not available for reservation yet"
-        );
-      } else {
-        throw new Error("Could not find day view iframe");
-      }
+      throw new Error("Could not find day view iframe");
     }
 
     await takeScreenshot(page, "5-day-view");
 
-    await reservationFrame.waitForSelector('a[href*="new_reservation.php"]', {
+    // Step 7: Click "Solicitar Reserva" link
+    log("Opening reservation form...");
+    await dayViewFrame.waitForSelector('a[href*="new_reservation.php"]', {
       timeout: 5000,
     });
+    await dayViewFrame.click('a[href*="new_reservation.php"]');
 
-    await reservationFrame.evaluate(() => {
-      const link = document.querySelector<HTMLAnchorElement>(
-        'a[href*="new_reservation.php"]'
-      );
-      if (link) link.click();
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    // Fill and submit reservation form
-    log(`Selecting time slot: ${timeSlot}...`);
+    // Step 8: Wait for form and select time slot
+    await page.waitForTimeout(500); // Brief wait for form iframe
 
     let formFrame = null;
     for (const f of page.frames()) {
-      const url = f.url();
-      if (url.includes("new_reservation.php")) {
+      if (f.url().includes("new_reservation.php")) {
         formFrame = f;
         break;
       }
@@ -591,35 +572,73 @@ async function reservePhase(
       throw new Error("Could not find reservation form iframe");
     }
 
-    await formFrame.waitForSelector("#schedule", { timeout: 5000 });
+    telemetry.formReadyMs = phaseTimer.elapsed();
+    log(
+      `✅ Form ready at T+${Engine.formatMs(telemetry.formReadyMs)}s`,
+      "SUCCESS"
+    );
 
-    // Select time slot by visible text
-    const selected = await formFrame.evaluate((targetSlot) => {
-      const select = document.getElementById(
-        "schedule"
-      ) as HTMLSelectElement | null;
-      if (!select) return null;
+    // Step 9: Select time slot using SiteAdapter
+    log(`Selecting time slot: ${timeSlot}...`);
+    const slotResult = await SiteAdapter.selectTimeSlot(formFrame, timeSlot);
 
-      const [startTime, endTime] = targetSlot.split(" - ");
-
-      for (let i = 0; i < select.options.length; i++) {
-        const option = select.options[i];
-        if (option.text.includes(startTime) && option.text.includes(endTime)) {
-          select.selectedIndex = i;
-          select.dispatchEvent(new Event("change", { bubbles: true }));
-          return option.text;
-        }
-      }
-      return null;
-    }, timeSlot);
-
-    if (!selected) {
+    if (!slotResult.success) {
       throw new Error(
-        `TIME_SLOT_NOT_FOUND: Could not find time slot: ${timeSlot}`
+        `TIME_SLOT_NOT_FOUND: ${slotResult.error || `Could not find time slot: ${timeSlot}`}`
       );
     }
 
+    log(`Selected slot value: ${slotResult.selectedValue}`, "DEBUG");
     await takeScreenshot(page, "6-form-filled");
+
+    // Step 10: Check ALLOW_BOOKING dead-man switch
+    const allowBooking =
+      process.env.ALLOW_BOOKING === "1" ||
+      (fs.existsSync("/tmp/allow_booking") && !ARGS.noBooking);
+
+    if (!allowBooking && !ARGS.shadowMode) {
+      log(
+        "⚠️  ALLOW_BOOKING not set - submission blocked by dead-man switch",
+        "WARN"
+      );
+      log(
+        "To enable real bookings, set ALLOW_BOOKING=1 or create /tmp/allow_booking",
+        "WARN"
+      );
+    }
+
+    const shouldSubmit = !ARGS.shadowMode && allowBooking;
+
+    // Step 11: Submit (or skip in shadow mode)
+    if (ARGS.shadowMode) {
+      log("🔮 SHADOW MODE: Skipping submission", "WARN");
+      telemetry.submitMs = phaseTimer.elapsed();
+      log(
+        `Would have submitted at T+${Engine.formatMs(telemetry.submitMs)}s`,
+        "WARN"
+      );
+
+      return {
+        success: true,
+        court: courtConfig.name,
+        date: targetDate.toDateString(),
+        time: timeSlot,
+        telemetry,
+      };
+    }
+
+    if (!shouldSubmit) {
+      log("⚠️  Submission blocked by ALLOW_BOOKING switch", "WARN");
+      telemetry.submitMs = phaseTimer.elapsed();
+      return {
+        success: false,
+        court: courtConfig.name,
+        date: targetDate.toDateString(),
+        time: timeSlot,
+        error: "BLOCKED_BY_ALLOW_BOOKING",
+        telemetry,
+      };
+    }
 
     log("Submitting reservation...");
 
@@ -632,33 +651,28 @@ async function reservePhase(
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
-    // Click submit button
-    await formFrame.evaluate(() => {
-      setTimeout(() => {
-        const btn = document.getElementById("save_btn") as HTMLElement | null;
-        if (btn) btn.click();
-      }, 0);
-    });
-
-    // Wait for response using event-driven approach
-    log("Waiting for result iframe...", "DEBUG");
-
-    // Log all current frame URLs for debugging
-    const currentFrames = page.frames().map((f) => f.url());
-    log(
-      `Current frames before waiting: ${JSON.stringify(currentFrames)}`,
-      "DEBUG"
+    const submitResult = await SiteAdapter.submitReservation(
+      formFrame,
+      ARGS.shadowMode
     );
+
+    telemetry.submitMs = phaseTimer.elapsed();
+    log(
+      `✅ Submitted at T+${Engine.formatMs(telemetry.submitMs)}s`,
+      "SUCCESS"
+    );
+
+    // Step 12: Wait for result
+    log("Waiting for result iframe...", "DEBUG");
 
     let resultFrame;
     try {
       resultFrame = await waitForReservationIframe(page, { timeout: 10000 });
       log(`Found result frame: ${resultFrame.url()}`, "DEBUG");
     } catch (waitError) {
-      // Log all frames if waiting failed
-      const allFrames = page.frames().map((f) => f.url());
+      const allFrameUrls = page.frames().map((f) => f.url());
       log(
-        `Failed to find result frame. All frames: ${JSON.stringify(allFrames)}`,
+        `Failed to find result frame. All frames: ${JSON.stringify(allFrameUrls)}`,
         "ERROR"
       );
       throw new Error(
@@ -670,10 +684,9 @@ async function reservePhase(
 
     await takeScreenshot(page, "7-submission-result");
 
-    // Use robust error detection with APP marker parsing
+    // Step 13: Detect result
     const errorResult = await detectError(resultFrame);
 
-    // Dump frame content if debug mode enabled
     if (ARGS.debugMode) {
       await dumpFrameContent(
         resultFrame,
@@ -698,6 +711,7 @@ async function reservePhase(
         court: courtConfig.name,
         date: targetDate.toDateString(),
         time: timeSlot,
+        telemetry,
       };
     } else if (errorResult.type === "SLOT_TAKEN") {
       throw new Error(`SLOT_TAKEN: ${errorResult.message}`);
@@ -706,7 +720,6 @@ async function reservePhase(
     } else if (errorResult.type === "NOT_YET_AVAILABLE") {
       throw new Error(`DATE_NOT_AVAILABLE_YET: ${errorResult.message}`);
     } else {
-      // Unknown error - dump all frames for debugging
       if (ARGS.debugMode) {
         await dumpAllFrames(
           page,
@@ -735,17 +748,38 @@ async function main(): Promise<void> {
   log(
     `Mode: ${ARGS.test ? "TEST" : "PRODUCTION"}${
       ARGS.dryRun ? " (DRY RUN)" : ""
-    }${ARGS.debugMode ? " (DEBUG)" : ""}`
+    }${ARGS.debugMode ? " (DEBUG)" : ""}${
+      ARGS.shadowMode ? " (SHADOW)" : ""
+    }`
   );
 
   const results: ReservationResult[] = [];
   const errors: { court: string; date: string; time: string; error: string }[] =
     [];
   let browser: Browser | undefined;
+  let t0Time: number | undefined;
 
   try {
     // Initialize screenshot session if in debug mode
     initScreenshotSession();
+
+    // Get server time skew correction
+    if (!ARGS.test) {
+      log("Checking server time skew...");
+      const serverTimeResult = await Engine.getServerTime(CONFIG.loginUrl);
+      log(
+        `Server time: ${serverTimeResult.serverTime.toISOString()}, Local time: ${serverTimeResult.localTime.toISOString()}`,
+        "DEBUG"
+      );
+      log(`Server skew: ${serverTimeResult.skewMs}ms`, "DEBUG");
+
+      if (Math.abs(serverTimeResult.skewMs) > 1000) {
+        log(
+          `⚠️  Significant time skew detected: ${serverTimeResult.skewMs}ms`,
+          "WARN"
+        );
+      }
+    }
 
     // Target date calculation - different timing for test vs production
     let targetDateCourt1: Date | null = null;
@@ -785,7 +819,18 @@ async function main(): Promise<void> {
       launchOptions.args.push("--disable-dev-shm-usage", "--disable-gpu");
     }
 
-    browser = await puppeteer.launch(launchOptions);
+    browser = await chromium.launch(launchOptions);
+
+    // Enable mock unlock mode if flag set
+    if (ARGS.mockUnlock) {
+      log("🧪 MOCK UNLOCK MODE: Enabling mock unlock with 5s delay", "WARN");
+      const context = await browser.newContext();
+      await Engine.enableMockUnlock({
+        context,
+        delayMs: 5000, // Simulate 5-second delay before date becomes clickable
+      });
+      log("Mock unlock mode enabled", "DEBUG");
+    }
 
     // Wait for midnight if not in test mode
     if (!ARGS.test) {
@@ -799,17 +844,75 @@ async function main(): Promise<void> {
         log("Already midnight, proceeding immediately");
       }
 
-      // Wait 5 seconds after midnight to let server finish processing
-      log(
-        "Waiting 5 seconds for server to finish midnight processing...",
-        "DEBUG"
-      );
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      // Mark T0 (midnight)
+      t0Time = Date.now();
+      log(`🕛 T0 reached at ${new Date(t0Time).toISOString()}`, "INFO");
     }
 
     // PHASE 1: Login (at midnight in production, immediate in test mode)
     // By logging in AFTER midnight, we get fresh calendar page with new dates already clickable
-    const loginPage = await loginPhase(browser);
+
+    // Create browser context (needed for parallel execution)
+    const context = await browser.newContext();
+    const loginPage = await context.newPage();
+
+    // Perform login
+    try {
+      log("🔐 Phase 1: Logging in...");
+      await loginPage.goto(CONFIG.loginUrl, {
+        waitUntil: "networkidle",
+        timeout: 30000,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await takeScreenshot(loginPage, "1-login-page");
+
+      const usernameInput = await loginPage.$('input[name="number"]');
+      const passwordInput = await loginPage.$('input[name="pass"]');
+
+      if (!usernameInput || !passwordInput) {
+        log("Could not find login inputs by name, trying by type...", "DEBUG");
+        const textInput = await loginPage.$('input[type="text"]');
+        const passInput = await loginPage.$('input[type="password"]');
+
+        if (textInput && passInput) {
+          await textInput.fill(String(CONFIG.username));
+          await passInput.fill(String(CONFIG.password));
+        } else {
+          throw new Error("Could not find login form inputs");
+        }
+      } else {
+        log(`Filling username field with: ${CONFIG.username}`, "DEBUG");
+        await usernameInput.fill(String(CONFIG.username));
+        log(`Filling password field`, "DEBUG");
+        await passwordInput.fill(String(CONFIG.password));
+      }
+
+      log("Credentials entered, clicking login button...");
+      await loginPage.click('button, input[type="submit"]');
+      log("Waiting for login to complete...");
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      const currentUrl = loginPage.url();
+      log(`Current URL after login click: ${currentUrl}`, "DEBUG");
+
+      try {
+        await loginPage.waitForSelector('a[href="pre_reservations.php"]', {
+          timeout: 30000,
+        });
+      } catch (selectorError) {
+        const bodyText = await loginPage.evaluate(() =>
+          document.body.innerText.substring(0, 500)
+        );
+        log(`Page content snapshot: ${bodyText}`, "DEBUG");
+        throw selectorError;
+      }
+
+      await takeScreenshot(loginPage, "2-logged-in-dashboard");
+      log("✅ Phase 1 Complete: Logged in successfully");
+    } catch (error) {
+      await takeScreenshot(loginPage, "error-login-phase");
+      throw new Error(`Login failed: ${(error as Error).message}`);
+    }
 
     // Calculate target dates (only in production mode, after midnight)
     if (!ARGS.test) {
@@ -902,46 +1005,157 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (shouldReserveCourt1) {
-      log("--- Starting Court 1 Reservation ---");
-      try {
-        const result = await reservePhase(
-          loginPage,
-          CONFIG.courts.court1,
-          targetDateCourt1,
-          court1TimeSlot
+    // Choose execution strategy based on SESSION_MODE
+    if (ARGS.sessionMode === "single" && shouldReserveCourt1 && shouldReserveCourt2) {
+      log("🚀 SESSION_MODE=single: Executing both courts in parallel", "INFO");
+
+      // Create second page from same context (shares session)
+      const loginPage2 = await context.newPage();
+
+      // Navigate second page to dashboard (shares cookies/session with first page)
+      log("Navigating Court 2 page to dashboard...", "DEBUG");
+      await loginPage2.goto(loginPage.url(), { waitUntil: "networkidle" });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      log("Court 2 page ready", "DEBUG");
+
+      // Execute both reservations in parallel with slight stagger to avoid modal conflicts
+      const parallelResults = await Promise.allSettled([
+        (async () => {
+          log("--- Starting Court 1 Reservation (Parallel) ---");
+          return await reservePhase(
+            loginPage,
+            CONFIG.courts.court1,
+            targetDateCourt1,
+            court1TimeSlot,
+            t0Time
+          );
+        })(),
+        (async () => {
+          // Delay Court 2 by 100ms to avoid modal conflict with Court 1
+          await new Promise(resolve => setTimeout(resolve, 100));
+          log("--- Starting Court 2 Reservation (Parallel) ---");
+          return await reservePhase(
+            loginPage2,
+            CONFIG.courts.court2,
+            targetDateCourt2,
+            court2TimeSlot,
+            t0Time
+          );
+        })(),
+      ]);
+
+      // Process results
+      parallelResults.forEach((result, index) => {
+        const courtName = index === 0 ? "Court 1" : "Court 2";
+        const courtDate = index === 0 ? targetDateCourt1 : targetDateCourt2;
+        const courtTime = index === 0 ? court1TimeSlot : court2TimeSlot;
+
+        if (result.status === "fulfilled") {
+          results.push(result.value);
+          log(`✅ ${courtName} completed successfully`, "SUCCESS");
+        } else {
+          errors.push({
+            court: courtName,
+            date: courtDate.toDateString(),
+            time: courtTime,
+            error: result.reason.message,
+          });
+          log(`❌ ${courtName} failed: ${result.reason.message}`, "ERROR");
+        }
+      });
+
+      log("✅ Parallel execution completed", "INFO");
+
+      // Session fallback detection
+      const hasAuthErrors = errors.some(e =>
+        e.error.toLowerCase().includes("login") ||
+        e.error.toLowerCase().includes("auth") ||
+        e.error.toLowerCase().includes("session") ||
+        e.error.toLowerCase().includes("csrf")
+      );
+
+      if (hasAuthErrors) {
+        log(
+          "⚠️  SESSION FAILURE DETECTED: Auth-related errors found in parallel mode",
+          "WARN"
         );
-        results.push(result);
-      } catch (error) {
-        errors.push({
-          court: "Court 1",
-          date: targetDateCourt1.toDateString(),
-          time: court1TimeSlot,
-          error: (error as Error).message,
-        });
+        log(
+          "Consider setting SESSION_MODE=contexts to use separate browser contexts per court",
+          "WARN"
+        );
+        log(
+          "This typically resolves session sharing issues between parallel reservations",
+          "WARN"
+        );
       }
-    }
+    } else {
+      // Sequential execution (SESSION_MODE=contexts or single court only)
+      if (ARGS.sessionMode === "contexts") {
+        log("SESSION_MODE=contexts: Executing courts sequentially with separate sessions", "INFO");
+      }
 
-    if (shouldReserveCourt2) {
-      log("--- Starting Court 2 Reservation ---");
-      // Need fresh login for second court
-      const loginPage2 = await loginPhase(browser);
+      if (shouldReserveCourt1) {
+        log("--- Starting Court 1 Reservation ---");
+        try {
+          const result = await reservePhase(
+            loginPage,
+            CONFIG.courts.court1,
+            targetDateCourt1,
+            court1TimeSlot,
+            t0Time
+          );
+          results.push(result);
+        } catch (error) {
+          errors.push({
+            court: "Court 1",
+            date: targetDateCourt1.toDateString(),
+            time: court1TimeSlot,
+            error: (error as Error).message,
+          });
+        }
+      }
 
-      try {
-        const result = await reservePhase(
-          loginPage2,
-          CONFIG.courts.court2,
-          targetDateCourt2,
-          court2TimeSlot
-        );
-        results.push(result);
-      } catch (error) {
-        errors.push({
-          court: "Court 2",
-          date: targetDateCourt2.toDateString(),
-          time: court2TimeSlot,
-          error: (error as Error).message,
-        });
+      if (shouldReserveCourt2) {
+        log("--- Starting Court 2 Reservation ---");
+        // Need fresh login and context for second court in contexts mode
+        const context2 = await browser.newContext();
+        const loginPage2 = await context2.newPage();
+
+        // Login for Court 2
+        try {
+          log("Logging in for Court 2...", "DEBUG");
+          await loginPage2.goto(CONFIG.loginUrl, { waitUntil: "networkidle" });
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          await loginPage2.fill('input[name="number"]', String(CONFIG.username));
+          await loginPage2.fill('input[name="pass"]', String(CONFIG.password));
+          await loginPage2.click('button, input[type="submit"]');
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await loginPage2.waitForSelector('a[href="pre_reservations.php"]', {
+            timeout: 30000,
+          });
+          log("Court 2 login successful", "DEBUG");
+        } catch (error) {
+          throw new Error(`Court 2 login failed: ${(error as Error).message}`);
+        }
+
+        try {
+          const result = await reservePhase(
+            loginPage2,
+            CONFIG.courts.court2,
+            targetDateCourt2,
+            court2TimeSlot,
+            t0Time
+          );
+          results.push(result);
+        } catch (error) {
+          errors.push({
+            court: "Court 2",
+            date: targetDateCourt2.toDateString(),
+            time: court2TimeSlot,
+            error: (error as Error).message,
+          });
+        }
       }
     }
 
@@ -949,11 +1163,27 @@ async function main(): Promise<void> {
     let emailBody = "=== Tennis Court Reservation Summary ===\n\n";
 
     if (results.length > 0) {
-      emailBody += "SUCCESSFUL RESERVATIONS:\n";
+      // Change wording based on shadow mode
+      if (ARGS.shadowMode || ARGS.test) {
+        emailBody += "🔮 SHADOW MODE - WOULD HAVE RESERVED:\n";
+        emailBody += "(No actual bookings were made - this was a test run)\n\n";
+      } else {
+        emailBody += "✅ REAL BOOKINGS CONFIRMED:\n";
+      }
+
       results.forEach((r) => {
-        emailBody += `✅ ${r.court} - ${r.date} at ${r.time}\n`;
+        const prefix = ARGS.shadowMode || ARGS.test ? "🧪" : "✅";
+        emailBody += `${prefix} ${r.court} - ${r.date} at ${r.time}\n`;
+
+        // Add telemetry if available
+        if (r.telemetry) {
+          emailBody += `   📊 Performance:\n`;
+          emailBody += `      Unlock: T+${Engine.formatMs(r.telemetry.unlockMs)}s\n`;
+          emailBody += `      Form ready: T+${Engine.formatMs(r.telemetry.formReadyMs)}s\n`;
+          emailBody += `      Submit: T+${Engine.formatMs(r.telemetry.submitMs)}s\n`;
+        }
+        emailBody += "\n";
       });
-      emailBody += "\n";
     }
 
     if (errors.length > 0) {
@@ -964,8 +1194,14 @@ async function main(): Promise<void> {
       });
     }
 
-    emailBody += `\nRun time: ${new Date().toISOString()}`;
-    emailBody += `\nLog file: ${logFile}`;
+    emailBody += `\n📅 Run time: ${new Date().toISOString()}`;
+    if (t0Time) {
+      emailBody += `\n⏱️  T0 (midnight): ${new Date(t0Time).toISOString()}`;
+    }
+    if (ARGS.shadowMode) {
+      emailBody += `\n🔮 Mode: SHADOW (no actual submissions)`;
+    }
+    emailBody += `\n📄 Log file: ${logFile}`;
 
     const subject =
       results.length > 0 && errors.length === 0
@@ -976,7 +1212,12 @@ async function main(): Promise<void> {
           })`
         : `Reservation Failed ❌`;
 
-    await sendEmail(subject, emailBody);
+    // Add test/shadow prefix to subject
+    const emailSubject = ARGS.test || ARGS.shadowMode
+      ? `[TEST] ${subject}`
+      : subject;
+
+    await sendEmail(emailSubject, emailBody);
 
     // Cleanup screenshots after email sent
     cleanupScreenshots();

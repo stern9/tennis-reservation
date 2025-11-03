@@ -29,6 +29,12 @@ export interface ReservationResult {
   court: string;
   date: string;
   time: string;
+  error?: string;
+  telemetry?: {
+    unlockMs: number;
+    formReadyMs: number;
+    submitMs: number;
+  };
 }
 
 export interface FrameData {
@@ -63,4 +69,14 @@ export interface Args {
   watchMode: boolean;
   keepScreenshots: boolean;
   testDelay: string | null;
+  // New Playwright migration flags
+  shadowMode: boolean;
+  canaryMode: boolean;
+  mockUnlock: boolean;
+  noBooking: boolean;
+  sessionMode: 'single' | 'contexts';
+  unlockMaxMs: number;
+  unlockPollMs: number;
+  navMs: number;
+  selMs: number;
 }
