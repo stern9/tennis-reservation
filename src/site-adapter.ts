@@ -152,7 +152,7 @@ export async function waitForNestedIframe(page: Page, timeout = 10000): Promise<
 // ============================================================================
 
 export interface UnlockPollOptions {
-  page: Page;
+  page?: Page;  // Optional - for screenshot on failure
   frame: Frame;
   targetDate: Date;
   pollIntervalMs?: number;
@@ -166,6 +166,7 @@ export interface UnlockPollOptions {
  */
 export async function pollForDateUnlock(options: UnlockPollOptions): Promise<number> {
   const {
+    page,
     frame,
     targetDate,
     pollIntervalMs = 180,
@@ -176,20 +177,80 @@ export async function pollForDateUnlock(options: UnlockPollOptions): Promise<num
   const formattedDate = formatDateForUrl(targetDate);
   const selector = SELECTORS.calendar.clickableDay(formattedDate);
   const startTime = Date.now();
+  let attemptCount = 0;
+  let diagnosticsDumped = false;
 
   while (true) {
     const elapsed = Date.now() - startTime;
+    attemptCount++;
+
+    // On first attempt, dump diagnostic info
+    if (!diagnosticsDumped) {
+      diagnosticsDumped = true;
+      console.log(`[DEBUG] Polling frame URL: ${frame.url()}`);
+      console.log(`[DEBUG] Looking for selector: ${selector}`);
+      console.log(`[DEBUG] Target date: ${formattedDate}`);
+
+      // Dump calendar HTML snippet
+      try {
+        const calendarHTML = await frame.evaluate(() => {
+          const calendarTable = document.querySelector('table.calendar');
+          return calendarTable ? calendarTable.outerHTML.substring(0, 3000) : 'No calendar table found';
+        });
+        console.log(`[DEBUG] Calendar HTML (first 3000 chars):\n${calendarHTML}`);
+      } catch (e) {
+        console.log(`[DEBUG] Could not dump calendar HTML: ${e}`);
+      }
+
+      // Find all clickable dates
+      try {
+        const clickableDates = await frame.$$eval('td.calendar-day_clickable', (elements) => {
+          return elements.map(el => ({
+            text: el.textContent?.trim(),
+            onclick: el.getAttribute('onclick'),
+            classes: el.className
+          }));
+        });
+        console.log(`[DEBUG] Found ${clickableDates.length} clickable dates:`);
+        clickableDates.forEach((d, i) => {
+          console.log(`[DEBUG]   ${i + 1}. Text: "${d.text}", onclick: "${d.onclick}"`);
+        });
+      } catch (e) {
+        console.log(`[DEBUG] Could not enumerate clickable dates: ${e}`);
+      }
+    }
 
     // Check if date is clickable
     const element = await frame.$(selector);
     if (element) {
+      console.log(`[DEBUG] ✅ Date found after ${attemptCount} attempts (${elapsed}ms)`);
       return elapsed;
+    }
+
+    // Log every 10 attempts (roughly every 1.8s)
+    if (attemptCount % 10 === 0) {
+      console.log(`[DEBUG] Poll attempt ${attemptCount}: Date still not clickable (${elapsed}ms elapsed)`);
     }
 
     // Check timeout
     if (elapsed >= maxWaitMs) {
+      // Final diagnostic dump
+      console.log(`[DEBUG] ❌ Polling failed after ${attemptCount} attempts over ${elapsed}ms`);
+
+      // Take screenshot if page provided
+      if (page) {
+        try {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const screenshotPath = `screenshots/polling-failure-${timestamp}.png`;
+          await page.screenshot({ path: screenshotPath });
+          console.log(`[DEBUG] Screenshot saved to: ${screenshotPath}`);
+        } catch (e) {
+          console.log(`[DEBUG] Could not save screenshot: ${e}`);
+        }
+      }
+
       throw new Error(
-        `Date not clickable after ${maxWaitMs}ms - selector: ${selector}`
+        `Date not clickable after ${maxWaitMs}ms (${attemptCount} attempts) - selector: ${selector}`
       );
     }
 

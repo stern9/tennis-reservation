@@ -37,6 +37,91 @@
 
 ---
 
+## 🚀 Production Server Setup (Quick Start)
+
+**Actual production setup used (2025-11-03):**
+
+### Server Info
+- **Server**: stern9-web-nyc (DigitalOcean Ubuntu)
+- **User**: stern9
+- **Path**: `/home/stern9/tennis-reservation`
+- **Node**: v22.20.0 (via nvm)
+- **Cron config**: Uses `~/.env.cron` for environment variables
+
+### Environment File Setup
+
+```bash
+# Edit environment file (used by cron)
+nano ~/.env.cron
+
+# Add these variables (in addition to existing ones):
+export ALLOW_BOOKING=1          # 1 = real bookings, 0 = blocked
+export SHADOW_MODE=0            # 0 = real, 1 = shadow mode
+export SESSION_MODE=contexts    # contexts = sequential (recommended)
+```
+
+### Installation Commands
+
+```bash
+# 1. Navigate to project
+cd /home/stern9/tennis-reservation
+
+# 2. Discard any local changes and pull latest
+git checkout -- package-lock.json
+git pull origin main
+
+# 3. Install dependencies
+npm install
+
+# 4. Install Playwright
+npx playwright install chromium
+npx playwright install-deps chromium
+
+# 5. Build TypeScript
+npm run build
+
+# 6. Verify build
+ls -la dist/src/engine.js dist/src/site-adapter.js dist/scripts/reserve.js
+# All three files should exist with recent timestamps
+
+# 7. Verify Playwright installed
+npm list playwright
+# Should show: playwright@1.56.1 or similar
+
+# 8. Verify environment
+grep -E "ALLOW_BOOKING|SHADOW_MODE|SESSION_MODE" ~/.env.cron
+```
+
+### Existing Cron Job (Already Configured)
+
+```bash
+# View cron
+crontab -l
+
+# Existing job (no changes needed):
+58 5 * * * bash -c 'source ~/.env.cron && /home/stern9/.nvm/versions/node/v22.20.0/bin/node /home/stern9/tennis-reservation/dist/scripts/reserve.js' >> /home/stern9/tennis-reservation/logs/cron.log 2>&1
+```
+
+**Timing**: 5:58 AM UTC = 11:58 PM Costa Rica time (script waits for midnight)
+
+### Verification After First Run
+
+```bash
+# Check today's log
+tail -100 ~/tennis-reservation/logs/reservation-$(date +%Y-%m-%d).log
+
+# Look for:
+# - "🕛 Midnight reached!"
+# - "Date unlocked at T+X.XXs"
+# - "SUCCESS: Reserved..."
+# - Performance telemetry
+
+# Check cron output
+tail -50 ~/tennis-reservation/logs/cron.log
+```
+
+---
+
 ## 🖥️ Server Requirements
 
 ### System Dependencies
@@ -459,7 +544,9 @@ free -h
 # Switch to contexts mode (uses separate sessions)
 export SESSION_MODE=contexts
 
-# This disables parallel execution but ensures isolation
+# This is now the recommended default mode
+# Optimized: No double login when only one court runs
+# Only creates separate context when both courts run (to avoid modal conflicts)
 ```
 
 ### Slow Performance
@@ -475,10 +562,20 @@ export SESSION_MODE=contexts
 
 **Symptoms:** "Date not clickable after 15000ms"
 
+**Common Causes:**
+1. **Slots already taken by competitors** - Date becomes unclickable when all slots filled
+   - Check debug logs for list of clickable dates
+   - Verify arrival timing (should be < 10-12s from midnight)
+   - If consistently late, check for double login issue
+
+2. **Stale calendar from second login** - Separate context loaded old calendar state
+   - Fixed in Nov 2025 - SESSION_MODE=contexts now optimized
+   - Verify logs show "Reusing existing session" for single-court runs
+
 **Solutions:**
-1. Increase max wait: `export UNLOCK_MAX_MS=30000`
-2. Check if site changed unlock timing
-3. Verify calendar navigation working
+1. Check debug logs to see which dates ARE clickable
+2. Increase max wait: `export UNLOCK_MAX_MS=30000`
+3. Review screenshot saved in `screenshots/polling-failure-*.png`
 4. Test with `--mock-unlock` flag locally
 
 ---

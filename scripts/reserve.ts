@@ -64,6 +64,7 @@ const CONFIG: AppConfig = {
       slots: {
         Monday: "06:00 AM - 07:00 AM",
         Tuesday: "06:00 AM - 07:00 AM",
+        Wednesday: "06:00 AM - 07:00 AM",
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
       },
@@ -122,7 +123,9 @@ const ARGS: Args = {
   canaryMode: process.argv.includes("--canary"),
   mockUnlock: process.argv.includes("--mock-unlock"),
   noBooking: process.argv.includes("--no-booking"),
-  sessionMode: (process.env.SESSION_MODE === "contexts" ? "contexts" : "single") as "single" | "contexts",
+  sessionMode: (process.env.SESSION_MODE === "contexts"
+    ? "contexts"
+    : "single") as "single" | "contexts",
   unlockMaxMs: parseInt(process.env.UNLOCK_MAX_MS || "15000", 10),
   unlockPollMs: parseInt(process.env.UNLOCK_POLL_MS || "180", 10),
   navMs: parseInt(process.env.NAV_MS || "1500", 10),
@@ -432,8 +435,18 @@ async function reservePhase(
 
     const currentCalendarMonth = await calendarFrame.evaluate(() => {
       const monthNames = [
-        "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
-        "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+        "ENERO",
+        "FEBRERO",
+        "MARZO",
+        "ABRIL",
+        "MAYO",
+        "JUNIO",
+        "JULIO",
+        "AGOSTO",
+        "SEPTIEMBRE",
+        "OCTUBRE",
+        "NOVIEMBRE",
+        "DICIEMBRE",
       ];
       const headerText = document.body.innerText;
       const monthMatch = headerText.match(
@@ -459,7 +472,15 @@ async function reservePhase(
     ) {
       log(`Navigating to month ${targetMonth}/${targetYear}...`, "DEBUG");
       await calendarFrame.evaluate(
-        ({ month, year, areaId }: { month: number; year: number; areaId: string }) => {
+        ({
+          month,
+          year,
+          areaId,
+        }: {
+          month: number;
+          year: number;
+          areaId: string;
+        }) => {
           window.location.href = `reservations.php?month=${month}&year=${year}&area=${areaId}`;
         },
         { month: targetMonth, year: targetYear, areaId: courtConfig.areaId }
@@ -468,7 +489,9 @@ async function reservePhase(
     }
 
     // Step 4: Poll for date unlock (replaces fixed delays)
-    log(`Polling for date ${formatDateForUrl(targetDate)} to become clickable...`);
+    log(
+      `Polling for date ${formatDateForUrl(targetDate)} to become clickable...`
+    );
     const unlockStartTime = Date.now();
 
     try {
@@ -584,7 +607,9 @@ async function reservePhase(
 
     if (!slotResult.success) {
       throw new Error(
-        `TIME_SLOT_NOT_FOUND: ${slotResult.error || `Could not find time slot: ${timeSlot}`}`
+        `TIME_SLOT_NOT_FOUND: ${
+          slotResult.error || `Could not find time slot: ${timeSlot}`
+        }`
       );
     }
 
@@ -657,10 +682,7 @@ async function reservePhase(
     );
 
     telemetry.submitMs = phaseTimer.elapsed();
-    log(
-      `✅ Submitted at T+${Engine.formatMs(telemetry.submitMs)}s`,
-      "SUCCESS"
-    );
+    log(`✅ Submitted at T+${Engine.formatMs(telemetry.submitMs)}s`, "SUCCESS");
 
     // Step 12: Wait for result
     log("Waiting for result iframe...", "DEBUG");
@@ -672,7 +694,9 @@ async function reservePhase(
     } catch (waitError) {
       const allFrameUrls = page.frames().map((f) => f.url());
       log(
-        `Failed to find result frame. All frames: ${JSON.stringify(allFrameUrls)}`,
+        `Failed to find result frame. All frames: ${JSON.stringify(
+          allFrameUrls
+        )}`,
         "ERROR"
       );
       throw new Error(
@@ -748,9 +772,7 @@ async function main(): Promise<void> {
   log(
     `Mode: ${ARGS.test ? "TEST" : "PRODUCTION"}${
       ARGS.dryRun ? " (DRY RUN)" : ""
-    }${ARGS.debugMode ? " (DEBUG)" : ""}${
-      ARGS.shadowMode ? " (SHADOW)" : ""
-    }`
+    }${ARGS.debugMode ? " (DEBUG)" : ""}${ARGS.shadowMode ? " (SHADOW)" : ""}`
   );
 
   const results: ReservationResult[] = [];
@@ -1006,7 +1028,11 @@ async function main(): Promise<void> {
     }
 
     // Choose execution strategy based on SESSION_MODE
-    if (ARGS.sessionMode === "single" && shouldReserveCourt1 && shouldReserveCourt2) {
+    if (
+      ARGS.sessionMode === "single" &&
+      shouldReserveCourt1 &&
+      shouldReserveCourt2
+    ) {
       log("🚀 SESSION_MODE=single: Executing both courts in parallel", "INFO");
 
       // Create second page from same context (shares session)
@@ -1032,7 +1058,7 @@ async function main(): Promise<void> {
         })(),
         (async () => {
           // Delay Court 2 by 100ms to avoid modal conflict with Court 1
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
           log("--- Starting Court 2 Reservation (Parallel) ---");
           return await reservePhase(
             loginPage2,
@@ -1067,11 +1093,12 @@ async function main(): Promise<void> {
       log("✅ Parallel execution completed", "INFO");
 
       // Session fallback detection
-      const hasAuthErrors = errors.some(e =>
-        e.error.toLowerCase().includes("login") ||
-        e.error.toLowerCase().includes("auth") ||
-        e.error.toLowerCase().includes("session") ||
-        e.error.toLowerCase().includes("csrf")
+      const hasAuthErrors = errors.some(
+        (e) =>
+          e.error.toLowerCase().includes("login") ||
+          e.error.toLowerCase().includes("auth") ||
+          e.error.toLowerCase().includes("session") ||
+          e.error.toLowerCase().includes("csrf")
       );
 
       if (hasAuthErrors) {
@@ -1091,7 +1118,10 @@ async function main(): Promise<void> {
     } else {
       // Sequential execution (SESSION_MODE=contexts or single court only)
       if (ARGS.sessionMode === "contexts") {
-        log("SESSION_MODE=contexts: Executing courts sequentially with separate sessions", "INFO");
+        log(
+          "SESSION_MODE=contexts: Executing courts sequentially with separate sessions",
+          "INFO"
+        );
       }
 
       if (shouldReserveCourt1) {
@@ -1117,26 +1147,52 @@ async function main(): Promise<void> {
 
       if (shouldReserveCourt2) {
         log("--- Starting Court 2 Reservation ---");
-        // Need fresh login and context for second court in contexts mode
-        const context2 = await browser.newContext();
-        const loginPage2 = await context2.newPage();
 
-        // Login for Court 2
-        try {
-          log("Logging in for Court 2...", "DEBUG");
-          await loginPage2.goto(CONFIG.loginUrl, { waitUntil: "networkidle" });
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Only create separate context if BOTH courts are running (to avoid modal conflicts)
+        // If only Court 2 is running, reuse existing loginPage (saves 7+ seconds)
+        let loginPage2 = loginPage;
 
-          await loginPage2.fill('input[name="number"]', String(CONFIG.username));
-          await loginPage2.fill('input[name="pass"]', String(CONFIG.password));
-          await loginPage2.click('button, input[type="submit"]');
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          await loginPage2.waitForSelector('a[href="pre_reservations.php"]', {
-            timeout: 30000,
-          });
-          log("Court 2 login successful", "DEBUG");
-        } catch (error) {
-          throw new Error(`Court 2 login failed: ${(error as Error).message}`);
+        if (shouldReserveCourt1 && ARGS.sessionMode === "contexts") {
+          // Both courts running - need separate context to avoid interference
+          log(
+            "Creating separate context for Court 2 (both courts active)",
+            "DEBUG"
+          );
+          const context2 = await browser.newContext();
+          loginPage2 = await context2.newPage();
+
+          // Login for Court 2
+          try {
+            log("Logging in for Court 2...", "DEBUG");
+            await loginPage2.goto(CONFIG.loginUrl, {
+              waitUntil: "networkidle",
+            });
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            await loginPage2.fill(
+              'input[name="number"]',
+              String(CONFIG.username)
+            );
+            await loginPage2.fill(
+              'input[name="pass"]',
+              String(CONFIG.password)
+            );
+            await loginPage2.click('button, input[type="submit"]');
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await loginPage2.waitForSelector('a[href="pre_reservations.php"]', {
+              timeout: 30000,
+            });
+            log("Court 2 login successful", "DEBUG");
+          } catch (error) {
+            throw new Error(
+              `Court 2 login failed: ${(error as Error).message}`
+            );
+          }
+        } else {
+          log(
+            "Reusing existing session for Court 2 (single court mode)",
+            "DEBUG"
+          );
         }
 
         try {
@@ -1178,9 +1234,15 @@ async function main(): Promise<void> {
         // Add telemetry if available
         if (r.telemetry) {
           emailBody += `   📊 Performance:\n`;
-          emailBody += `      Unlock: T+${Engine.formatMs(r.telemetry.unlockMs)}s\n`;
-          emailBody += `      Form ready: T+${Engine.formatMs(r.telemetry.formReadyMs)}s\n`;
-          emailBody += `      Submit: T+${Engine.formatMs(r.telemetry.submitMs)}s\n`;
+          emailBody += `      Unlock: T+${Engine.formatMs(
+            r.telemetry.unlockMs
+          )}s\n`;
+          emailBody += `      Form ready: T+${Engine.formatMs(
+            r.telemetry.formReadyMs
+          )}s\n`;
+          emailBody += `      Submit: T+${Engine.formatMs(
+            r.telemetry.submitMs
+          )}s\n`;
         }
         emailBody += "\n";
       });
@@ -1213,9 +1275,8 @@ async function main(): Promise<void> {
         : `Reservation Failed ❌`;
 
     // Add test/shadow prefix to subject
-    const emailSubject = ARGS.test || ARGS.shadowMode
-      ? `[TEST] ${subject}`
-      : subject;
+    const emailSubject =
+      ARGS.test || ARGS.shadowMode ? `[TEST] ${subject}` : subject;
 
     await sendEmail(emailSubject, emailBody);
 

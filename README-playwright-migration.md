@@ -2,10 +2,11 @@
 
 ---
 
-## 🚧 MIGRATION STATUS (Updated: 2025-11-02 - Evening)
+## 🚧 MIGRATION STATUS (Updated: 2025-11-03 - Afternoon)
 
 ### ✅ Phase 1: Foundation — COMPLETE
 ### ✅ Phase 2: Integration — COMPLETE
+### ✅ Phase 3: Production Diagnosis & Optimization — COMPLETE
 
 **Completed Items:**
 - ✅ Playwright dependencies installed (`package.json` updated)
@@ -95,37 +96,54 @@
 
 ---
 
-### 📋 Phase 3–5: Testing & Production — NOT STARTED
+### ✅ Phase 3: Production Diagnosis & Optimization — COMPLETE (2025-11-03)
 
-- Phase 3: Context isolation (if needed)
-- Phase 4: Testing infrastructure (unit tests, benchmark script)
-- Phase 5: Production rollout (shadow → canary → full)
+**Production Failure Analysis (Nov 3 midnight):**
+- ❌ Court 1 (Nov 12, Wed): Skipped - No Wednesday slot configured
+- ❌ Court 2 (Nov 11, Tue): Failed - "DATE_NOT_AVAILABLE_YET - Date not clickable after 15000ms"
+- ⏱️  Timing: Login at +8s, Court 2 second login at +15s, clicked at +18s (TOO LATE)
+
+**Root Cause Identified:**
+- SESSION_MODE=contexts created separate browser context for Court 2
+- Second login took 7+ seconds, delaying arrival at calendar
+- By +18s, competitors had already booked slots (taken by +5-10s)
+- Date became unclickable when all slots filled
+
+**Fix Implemented:**
+1. ✅ **Smart Context Reuse** (saves 7-10s)
+   - Court 2 reuses existing session when running alone
+   - Only creates separate context when BOTH courts run (avoid modal conflicts)
+   - Logic: `if (shouldReserveCourt1 && sessionMode === "contexts") { ... }`
+
+2. ✅ **Enhanced Debug Logging**
+   - Dumps calendar HTML on first poll attempt
+   - Lists all clickable dates found
+   - Logs every 10 poll attempts (~1.8s intervals)
+   - Takes screenshot on polling failure
+   - Shows frame URL and selector being used
+
+**Test Results (Nov 3 afternoon):**
+- ✅ Nov 11 test: Date found instantly (0ms)
+- ✅ No double login: "Reusing existing session for Court 2" confirmed
+- ✅ Form ready at T+4.14s, would submit at T+4.15s
+- ✅ Total timing: ~12.5s (vs 34s in production failure)
+- ✅ **Improvement: 10+ seconds faster arrival at calendar**
+
+**Expected Performance:**
+- Old: +18s to reach calendar (login 8s + second login 7s + navigation 3s)
+- New: +8-12s to reach calendar (login 8s + navigation 4s, no second login)
+
+**Deployment:** Ready for Nov 4 midnight production test
 
 ---
 
-### 🎯 Next Session Action Items
+### 🎯 Next Steps
 
-**Phase 2 Complete!** Ready to move to Phase 3: Testing & Production
-
-1. **Shadow mode testing** — Run with `--shadow` flag for 2-3 nights
-   - Test: `npm run reserve:shadow`
-   - Verify telemetry shows reasonable timings (< 10-15s)
-   - Check logs for any session errors
-
-2. **Test mode validation** — Test with known dates
-   - Test: `npm run reserve:test -- --target-date 2025-11-10`
-   - Verify unlock polling works
-   - Confirm parallel execution functions correctly
-
-3. **Mock unlock testing** — Test polling at any time
-   - Test: `npm run reserve:mock-unlock -- --target-date 2025-11-10`
-   - Verify 180ms polling detects unlock
-   - Check telemetry accuracy
-
-4. **Production readiness checklist**
-   - Set `ALLOW_BOOKING=1` when ready for real submissions
-   - Monitor first production run closely
-   - Compare telemetry against old system baseline (~65-70s)
+**Tonight (Nov 4 midnight):**
+- Monitor logs for debug output
+- Verify no double login occurs
+- Check arrival timing at calendar
+- Confirm Court 2 books successfully
 
 ---
 
