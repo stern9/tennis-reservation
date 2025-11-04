@@ -160,11 +160,20 @@ export interface UnlockPollOptions {
   onTick?: (elapsed: number) => void;
 }
 
+export interface UnlockPollResult {
+  elapsedMs: number;
+  attempts: number;
+  reloads: number;
+  lastState?: string;
+}
+
 /**
  * Poll for date unlock with configurable interval and max wait
  * Returns elapsed time in milliseconds when date becomes clickable
  */
-export async function pollForDateUnlock(options: UnlockPollOptions): Promise<number> {
+export async function pollForDateUnlock(
+  options: UnlockPollOptions
+): Promise<UnlockPollResult> {
   const {
     page,
     frame,
@@ -177,91 +186,106 @@ export async function pollForDateUnlock(options: UnlockPollOptions): Promise<num
   const formattedDate = formatDateForUrl(targetDate);
   const selector = SELECTORS.calendar.clickableDay(formattedDate);
   const startTime = Date.now();
-  let attemptCount = 0;
-  let diagnosticsDumped = false;
+  let attempts = 0;
+  let reloads = 0;
+  let lastReportedSecond = -1;
+  let lastState: string | undefined;
+  let currentUrl = frame.url();
 
-  while (true) {
-    const elapsed = Date.now() - startTime;
-    attemptCount++;
-
-    // On first attempt, dump diagnostic info
-    if (!diagnosticsDumped) {
-      diagnosticsDumped = true;
-      console.log(`[DEBUG] Polling frame URL: ${frame.url()}`);
-      console.log(`[DEBUG] Looking for selector: ${selector}`);
-      console.log(`[DEBUG] Target date: ${formattedDate}`);
-
-      // Dump calendar HTML snippet
+  const refreshCalendar = async () => {
+    reloads++;
+    try {
+      const url = new URL(currentUrl);
+      url.searchParams.set("ts", Date.now().toString());
+      currentUrl = url.toString();
+      await frame.goto(currentUrl, { waitUntil: "domcontentloaded" });
+    } catch (error) {
+      // Fallback to a plain reload if URL parsing fails (relative URL)
       try {
-        const calendarHTML = await frame.evaluate(() => {
-          const calendarTable = document.querySelector('table.calendar');
-          return calendarTable ? calendarTable.outerHTML.substring(0, 3000) : 'No calendar table found';
-        });
-        console.log(`[DEBUG] Calendar HTML (first 3000 chars):\n${calendarHTML}`);
-      } catch (e) {
-        console.log(`[DEBUG] Could not dump calendar HTML: ${e}`);
-      }
-
-      // Find all clickable dates
-      try {
-        const clickableDates = await frame.$$eval('td.calendar-day_clickable', (elements) => {
-          return elements.map(el => ({
-            text: el.textContent?.trim(),
-            onclick: el.getAttribute('onclick'),
-            classes: el.className
-          }));
-        });
-        console.log(`[DEBUG] Found ${clickableDates.length} clickable dates:`);
-        clickableDates.forEach((d, i) => {
-          console.log(`[DEBUG]   ${i + 1}. Text: "${d.text}", onclick: "${d.onclick}"`);
-        });
-      } catch (e) {
-        console.log(`[DEBUG] Could not enumerate clickable dates: ${e}`);
-      }
-    }
-
-    // Check if date is clickable
-    const element = await frame.$(selector);
-    if (element) {
-      console.log(`[DEBUG] ✅ Date found after ${attemptCount} attempts (${elapsed}ms)`);
-      return elapsed;
-    }
-
-    // Log every 10 attempts (roughly every 1.8s)
-    if (attemptCount % 10 === 0) {
-      console.log(`[DEBUG] Poll attempt ${attemptCount}: Date still not clickable (${elapsed}ms elapsed)`);
-    }
-
-    // Check timeout
-    if (elapsed >= maxWaitMs) {
-      // Final diagnostic dump
-      console.log(`[DEBUG] ❌ Polling failed after ${attemptCount} attempts over ${elapsed}ms`);
-
-      // Take screenshot if page provided
-      if (page) {
-        try {
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const screenshotPath = `screenshots/polling-failure-${timestamp}.png`;
-          await page.screenshot({ path: screenshotPath });
-          console.log(`[DEBUG] Screenshot saved to: ${screenshotPath}`);
-        } catch (e) {
-          console.log(`[DEBUG] Could not save screenshot: ${e}`);
+        const fallbackUrl = frame.url();
+        if (fallbackUrl) {
+          currentUrl = fallbackUrl;
+          await frame.goto(currentUrl, { waitUntil: "domcontentloaded" });
         }
+      } catch (reloadError) {
+        console.log(
+          `[DEBUG] Calendar reload failed: ${(reloadError as Error).message}`
+        );
       }
+    }
+  };
 
-      throw new Error(
-        `Date not clickable after ${maxWaitMs}ms (${attemptCount} attempts) - selector: ${selector}`
-      );
+  while (Date.now() - startTime <= maxWaitMs) {
+    attempts++;
+
+    const cellState = await frame
+      .evaluate((sel) => {
+        const el = document.querySelector<HTMLTableCellElement>(sel);
+        if (!el) {
+          return { present: false, clickable: false, classes: "" };
+        }
+
+        const className = el.className || "";
+        const clickable =
+          className.includes("calendar-day_clickable") ||
+          el.classList.contains("calendar-day_clickable");
+
+        return {
+          present: true,
+          clickable,
+          classes: className,
+        };
+      }, selector)
+      .catch(() => ({
+        present: false,
+        clickable: false,
+        classes: "",
+      }));
+
+    lastState = cellState.classes;
+
+    if (cellState.clickable) {
+      return {
+        elapsedMs: Date.now() - startTime,
+        attempts,
+        reloads,
+        lastState,
+      };
     }
 
-    // Callback for logging
-    if (onTick) {
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= maxWaitMs) {
+      break;
+    }
+
+    const elapsedSeconds = Math.floor(elapsed / 1000);
+    if (onTick && elapsedSeconds !== lastReportedSecond) {
+      lastReportedSecond = elapsedSeconds;
       onTick(elapsed);
     }
 
-    // Wait before next poll
-    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    const sleepMs = Math.min(pollIntervalMs, maxWaitMs - elapsed);
+    if (sleepMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, sleepMs));
+    }
+
+    await refreshCalendar();
   }
+
+  if (page) {
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const screenshotPath = `screenshots/polling-failure-${timestamp}.png`;
+      await page.screenshot({ path: screenshotPath });
+      console.log(`[DEBUG] Screenshot saved to: ${screenshotPath}`);
+    } catch (e) {
+      console.log(`[DEBUG] Could not save screenshot: ${e}`);
+    }
+  }
+
+  throw new Error(
+    `Date not clickable after ${maxWaitMs}ms (${attempts} attempts, ${reloads} refreshes) - selector: ${selector} - last state: ${lastState || "none"}`
+  );
 }
 
 /**

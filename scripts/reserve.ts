@@ -258,6 +258,43 @@ function waitUntilMidnight(): Promise<void> {
   });
 }
 
+/**
+ * Milliseconds until the next Costa Rica midnight
+ */
+function msUntilNextCRMidnight(): number {
+  const now = nowInCR();
+  const nextMidnight = new Date(now);
+  nextMidnight.setHours(24, 0, 0, 0);
+  return nextMidnight.getTime() - now.getTime();
+}
+
+/**
+ * Wait until we are within the pre-login window (e.g., 30 seconds before midnight)
+ */
+async function waitUntilPreMidnightWindow(offsetMs: number): Promise<void> {
+  while (true) {
+    const remainingMs = msUntilNextCRMidnight();
+    if (remainingMs <= offsetMs) {
+      return;
+    }
+
+    const waitMs = Math.min(remainingMs - offsetMs, 30000);
+    const remainingSeconds = Math.max(
+      0,
+      Math.round((remainingMs - offsetMs) / 1000)
+    );
+
+    log(
+      `🕒 ${remainingSeconds}s until login window (midnight minus ${Math.round(
+        offsetMs / 1000
+      )}s)`,
+      "INFO"
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+}
+
 // ============================================================================
 // EMAIL NOTIFICATION
 // ============================================================================
@@ -430,6 +467,7 @@ async function reservePhase(
       throw new Error("Could not find calendar iframe");
     }
 
+    await calendarFrame.waitForLoadState("domcontentloaded");
     await takeScreenshot(page, "4-calendar-view");
 
     // Step 3: Navigate to correct month if needed
@@ -496,25 +534,30 @@ async function reservePhase(
       `Polling for date ${formatDateForUrl(targetDate)} to become clickable...`
     );
     const unlockStartTime = Date.now();
+    let lastPollSecond = -1;
 
     try {
-      telemetry.unlockMs = await SiteAdapter.pollForDateUnlock({
+      const unlockResult = await SiteAdapter.pollForDateUnlock({
         page,
         frame: calendarFrame,
         targetDate,
         pollIntervalMs: ARGS.unlockPollMs,
         maxWaitMs: ARGS.unlockMaxMs,
         onTick: (elapsed) => {
-          if (elapsed % 1000 === 0) {
+          const seconds = Math.floor(elapsed / 1000);
+          if (seconds !== lastPollSecond) {
+            lastPollSecond = seconds;
             log(`  Polling... ${Engine.formatMs(elapsed)}s elapsed`, "DEBUG");
           }
         },
       });
 
+      telemetry.unlockMs = unlockResult.elapsedMs;
+
       log(
-        `✅ Date unlocked at T+${Engine.formatMs(
+        `✅ Date unlocked after ${unlockResult.reloads} refreshes (T+${Engine.formatMs(
           Date.now() - unlockStartTime
-        )}s`,
+        )}s)`,
         "SUCCESS"
       );
     } catch (unlockError) {
@@ -857,25 +900,30 @@ async function main(): Promise<void> {
       log("Mock unlock mode enabled", "DEBUG");
     }
 
-    // Wait for midnight if not in test mode
+    // Pre-login timing: start authentication close to midnight to reuse fresh session
+    const loginLeadMs = parseInt(process.env.LOGIN_LEAD_MS || "30000", 10);
     if (!ARGS.test) {
-      const crTime = getCostaRicaTime();
+      const crTime = nowInCR();
       log(`Current Costa Rica time: ${crTime.toLocaleTimeString()}`);
 
-      if (crTime.getHours() !== 0 || crTime.getMinutes() !== 0) {
-        log("Waiting for midnight Costa Rica time...");
-        await waitUntilMidnight();
-      } else {
-        log("Already midnight, proceeding immediately");
+      if (msUntilNextCRMidnight() > loginLeadMs) {
+        log(
+          `Waiting until ${Math.round(loginLeadMs / 1000)}s before midnight to log in...`
+        );
+        await waitUntilPreMidnightWindow(loginLeadMs);
       }
 
-      // Mark T0 (midnight)
-      t0Time = Date.now();
-      log(`🕛 T0 reached at ${new Date(t0Time).toISOString()}`, "INFO");
+      const secondsUntilMidnight = Math.max(
+        0,
+        Math.round(msUntilNextCRMidnight() / 1000)
+      );
+      log(
+        `🚪 Entering login window: ${secondsUntilMidnight}s until midnight`,
+        "INFO"
+      );
     }
 
-    // PHASE 1: Login (at midnight in production, immediate in test mode)
-    // By logging in AFTER midnight, we get fresh calendar page with new dates already clickable
+    // PHASE 1: Login (start ~30s before midnight in production, immediate in test mode)
 
     // Create browser context (needed for parallel execution)
     const context = await browser.newContext();
@@ -939,9 +987,26 @@ async function main(): Promise<void> {
       throw new Error(`Login failed: ${(error as Error).message}`);
     }
 
+    if (!ARGS.test) {
+      const remainingToMidnight = msUntilNextCRMidnight();
+      if (remainingToMidnight > 0) {
+        log(
+          `⏳ Waiting ${Math.ceil(
+            remainingToMidnight / 1000
+          )}s for midnight after login...`
+        );
+        await waitUntilMidnight();
+      } else {
+        log("⚠️ Midnight reached during login, continuing immediately", "WARN");
+      }
+
+      t0Time = Date.now();
+      log(`🕛 T0 reached at ${new Date(t0Time).toISOString()}`, "INFO");
+    }
+
     // Calculate target dates (only in production mode, after midnight)
     if (!ARGS.test) {
-      // By waiting until midnight before login, we ensure "today" is correct (e.g., Oct 13, not Oct 12)
+      // Midnight has passed, so "today" reflects the correct CR day (e.g., Oct 13, not Oct 12)
       const today = crMidnight();
 
       // Log timezone info for debugging
