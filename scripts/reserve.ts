@@ -1,4 +1,4 @@
-import { chromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium, Browser, BrowserContext, Page, Frame } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import * as dotenv from "dotenv";
@@ -574,25 +574,68 @@ async function reservePhase(
 
     // Step 6: Wait for day view iframe
     log("Waiting for day view...");
-    await page.waitForTimeout(500); // Brief wait for iframe to appear
+    const dayViewTimeoutMs = parseInt(
+      process.env.DAY_VIEW_TIMEOUT_MS || "4500",
+      10
+    );
+    const dayViewStart = Date.now();
+    let dayViewFrame: Frame | null = null;
 
-    const allFrames = page.frames();
-    let dayViewFrame = null;
+    while (!dayViewFrame && Date.now() - dayViewStart <= dayViewTimeoutMs) {
+      const allFrames = page.frames();
 
-    // Find day view frame with "Solicitar Reserva"
-    for (const f of allFrames) {
-      try {
-        const content = await f.content();
-        if (content.includes("Solicitar Reserva")) {
+      for (const f of allFrames) {
+        const url = f.url();
+
+        if (url.includes("day.php")) {
           dayViewFrame = f;
           break;
         }
-      } catch (e) {
-        // Skip inaccessible frames
+
+        try {
+          const hasReserva = await f.evaluate(() => {
+            const body = document.body;
+            if (!body) return false;
+            const text = body.innerText || "";
+            return text.includes("Solicitar Reserva");
+          });
+
+          if (hasReserva) {
+            dayViewFrame = f;
+            break;
+          }
+        } catch {
+          // Ignore frames that fail evaluation (likely still loading)
+        }
+      }
+
+      if (!dayViewFrame) {
+        await page.waitForTimeout(120);
       }
     }
 
+    const allFrames = page.frames();
+
+    if (dayViewFrame) {
+      log(
+        `Found day view frame after ${Engine.formatMs(
+          Date.now() - dayViewStart
+        )}s`,
+        "DEBUG"
+      );
+    }
     if (!dayViewFrame) {
+      log(
+        `Day view not found after ${Engine.formatMs(
+          Date.now() - dayViewStart
+        )}s – inspecting frames (${allFrames.length} total)`,
+        "DEBUG"
+      );
+
+      allFrames.forEach((f, idx) =>
+        log(`  Frame ${idx}: ${f.url()}`, "DEBUG")
+      );
+
       // Check for "date not available" message
       for (const f of allFrames) {
         try {
