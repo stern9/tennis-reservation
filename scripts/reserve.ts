@@ -68,6 +68,7 @@ const CONFIG: AppConfig = {
         Thursday: "06:00 AM - 07:00 AM",
         Friday: "06:00 AM - 07:00 AM",
         Saturday: "09:00 AM - 10:00 AM",
+        Sunday: "07:00 AM - 08:00 AM",
       },
     },
     court2: {
@@ -78,8 +79,8 @@ const CONFIG: AppConfig = {
         Tuesday: "07:00 AM - 08:00 AM",
         Wednesday: "07:00 AM - 08:00 AM",
         Thursday: "07:00 AM - 08:00 AM",
-        // Friday: "07:00 AM - 08:00 AM",
-        Friday: "06:00 AM - 07:00 AM",
+        Friday: "07:00 AM - 08:00 AM",
+        Saturday: "07:00 AM - 08:00 AM",
       },
     },
   },
@@ -815,6 +816,89 @@ async function reservePhase(
 }
 
 // ============================================================================
+// LOGIN HELPER
+// ============================================================================
+
+/**
+ * Perform login to the tennis reservation system
+ * @param page - Playwright page to login with
+ * @param courtName - Name for logging (e.g., "Court 1" or "")
+ * @returns The logged-in page ready for reservations
+ */
+async function performLogin(page: Page, courtName: string = ""): Promise<Page> {
+  const label = courtName ? ` for ${courtName}` : "";
+
+  try {
+    log(`🔐 Logging in${label}...`);
+    await page.goto(CONFIG.loginUrl, {
+      waitUntil: "networkidle",
+      timeout: 30000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    if (!courtName) {
+      await takeScreenshot(page, "1-login-page");
+    }
+
+    const usernameInput = await page.$('input[name="number"]');
+    const passwordInput = await page.$('input[name="pass"]');
+
+    if (!usernameInput || !passwordInput) {
+      log(
+        `Could not find login inputs by name, trying by type...${label}`,
+        "DEBUG"
+      );
+      const textInput = await page.$('input[type="text"]');
+      const passInput = await page.$('input[type="password"]');
+
+      if (textInput && passInput) {
+        await textInput.fill(String(CONFIG.username));
+        await passInput.fill(String(CONFIG.password));
+      } else {
+        throw new Error("Could not find login form inputs");
+      }
+    } else {
+      log(`Filling username field with: ${CONFIG.username}${label}`, "DEBUG");
+      await usernameInput.fill(String(CONFIG.username));
+      log(`Filling password field${label}`, "DEBUG");
+      await passwordInput.fill(String(CONFIG.password));
+    }
+
+    log(`Credentials entered, clicking login button${label}...`);
+    await page.click('button, input[type="submit"]');
+    log(`Waiting for login to complete${label}...`);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    const currentUrl = page.url();
+    log(`Current URL after login click: ${currentUrl}${label}`, "DEBUG");
+
+    try {
+      await page.waitForSelector('a[href="pre_reservations.php"]', {
+        timeout: 30000,
+      });
+    } catch (selectorError) {
+      const bodyText = await page.evaluate(() =>
+        document.body.innerText.substring(0, 500)
+      );
+      log(`Page content snapshot${label}: ${bodyText}`, "DEBUG");
+      throw selectorError;
+    }
+
+    if (!courtName) {
+      await takeScreenshot(page, "2-logged-in-dashboard");
+    }
+    log(`✅ Logged in successfully${label}`);
+
+    return page;
+  } catch (error) {
+    if (!courtName) {
+      await takeScreenshot(page, "error-login-phase");
+    }
+    throw new Error(`Login failed${label}: ${(error as Error).message}`);
+  }
+}
+
+// ============================================================================
 // MAIN EXECUTION
 // ============================================================================
 
@@ -932,66 +1016,43 @@ async function main(): Promise<void> {
 
     // PHASE 1: Login (start ~30s before midnight in production, immediate in test mode)
 
-    // Create browser context (needed for parallel execution)
-    const context = await browser.newContext();
-    const loginPage = await context.newPage();
+    // Determine if both courts are eligible (will be used later in Phase 2)
+    // A court is eligible if: not skipped AND has at least one slot configured
+    const court1HasSlots = Object.keys(CONFIG.courts.court1.slots).length > 0;
+    const court2HasSlots = Object.keys(CONFIG.courts.court2.slots).length > 0;
+    const court1Eligible = !ARGS.skipCourt1 && court1HasSlots;
+    const court2Eligible = !ARGS.skipCourt2 && court2HasSlots;
+    const bothCourtsEligible = court1Eligible && court2Eligible;
 
-    // Perform login
-    try {
+    // Create browser contexts
+    // If SESSION_MODE=single and both courts eligible, create two contexts and login in parallel
+    // Otherwise, create one context
+    let context: BrowserContext;
+    let context2: BrowserContext | undefined;
+    let loginPage: Page;
+    let loginPage2: Page | undefined;
+
+    if (ARGS.sessionMode === "single" && bothCourtsEligible) {
+      log("🚀 Creating dual contexts for parallel execution", "INFO");
+
+      // Create two contexts
+      context = await browser.newContext();
+      context2 = await browser.newContext();
+
+      // Login to both in parallel
+      log("🔐 Phase 1: Logging in (parallel)...");
+      [loginPage, loginPage2] = await Promise.all([
+        performLogin(await context.newPage(), ""),
+        performLogin(await context2.newPage(), "Court 2"),
+      ]);
+
+      log("✅ Phase 1 Complete: Both logins successful");
+    } else {
+      // Single context (either SESSION_MODE=contexts or only one court)
       log("🔐 Phase 1: Logging in...");
-      await loginPage.goto(CONFIG.loginUrl, {
-        waitUntil: "networkidle",
-        timeout: 30000,
-      });
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await takeScreenshot(loginPage, "1-login-page");
-
-      const usernameInput = await loginPage.$('input[name="number"]');
-      const passwordInput = await loginPage.$('input[name="pass"]');
-
-      if (!usernameInput || !passwordInput) {
-        log("Could not find login inputs by name, trying by type...", "DEBUG");
-        const textInput = await loginPage.$('input[type="text"]');
-        const passInput = await loginPage.$('input[type="password"]');
-
-        if (textInput && passInput) {
-          await textInput.fill(String(CONFIG.username));
-          await passInput.fill(String(CONFIG.password));
-        } else {
-          throw new Error("Could not find login form inputs");
-        }
-      } else {
-        log(`Filling username field with: ${CONFIG.username}`, "DEBUG");
-        await usernameInput.fill(String(CONFIG.username));
-        log(`Filling password field`, "DEBUG");
-        await passwordInput.fill(String(CONFIG.password));
-      }
-
-      log("Credentials entered, clicking login button...");
-      await loginPage.click('button, input[type="submit"]');
-      log("Waiting for login to complete...");
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      const currentUrl = loginPage.url();
-      log(`Current URL after login click: ${currentUrl}`, "DEBUG");
-
-      try {
-        await loginPage.waitForSelector('a[href="pre_reservations.php"]', {
-          timeout: 30000,
-        });
-      } catch (selectorError) {
-        const bodyText = await loginPage.evaluate(() =>
-          document.body.innerText.substring(0, 500)
-        );
-        log(`Page content snapshot: ${bodyText}`, "DEBUG");
-        throw selectorError;
-      }
-
-      await takeScreenshot(loginPage, "2-logged-in-dashboard");
+      context = await browser.newContext();
+      loginPage = await performLogin(await context.newPage(), "");
       log("✅ Phase 1 Complete: Logged in successfully");
-    } catch (error) {
-      await takeScreenshot(loginPage, "error-login-phase");
-      throw new Error(`Login failed: ${(error as Error).message}`);
     }
 
     if (!ARGS.test) {
@@ -1108,18 +1169,18 @@ async function main(): Promise<void> {
       shouldReserveCourt1 &&
       shouldReserveCourt2
     ) {
-      log("🚀 SESSION_MODE=single: Executing both courts in parallel", "INFO");
+      log(
+        "🚀 SESSION_MODE=single: Executing both courts in parallel with separate sessions",
+        "INFO"
+      );
 
-      // Create second page from same context (shares session)
-      const loginPage2 = await context.newPage();
+      // loginPage2 was already created and logged in during Phase 1
+      // Both pages use separate browser contexts to avoid session confusion
+      if (!loginPage2) {
+        throw new Error("loginPage2 should have been created in Phase 1");
+      }
 
-      // Navigate second page to dashboard (shares cookies/session with first page)
-      log("Navigating Court 2 page to dashboard...", "DEBUG");
-      await loginPage2.goto(loginPage.url(), { waitUntil: "networkidle" });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      log("Court 2 page ready", "DEBUG");
-
-      // Execute both reservations in parallel with slight stagger to avoid modal conflicts
+      // Execute both reservations in parallel (no stagger needed - separate contexts)
       const parallelResults = await Promise.allSettled([
         (async () => {
           log("--- Starting Court 1 Reservation (Parallel) ---");
@@ -1132,8 +1193,6 @@ async function main(): Promise<void> {
           );
         })(),
         (async () => {
-          // Delay Court 2 by 100ms to avoid modal conflict with Court 1
-          await new Promise((resolve) => setTimeout(resolve, 100));
           log("--- Starting Court 2 Reservation (Parallel) ---");
           return await reservePhase(
             loginPage2,
@@ -1166,30 +1225,6 @@ async function main(): Promise<void> {
       });
 
       log("✅ Parallel execution completed", "INFO");
-
-      // Session fallback detection
-      const hasAuthErrors = errors.some(
-        (e) =>
-          e.error.toLowerCase().includes("login") ||
-          e.error.toLowerCase().includes("auth") ||
-          e.error.toLowerCase().includes("session") ||
-          e.error.toLowerCase().includes("csrf")
-      );
-
-      if (hasAuthErrors) {
-        log(
-          "⚠️  SESSION FAILURE DETECTED: Auth-related errors found in parallel mode",
-          "WARN"
-        );
-        log(
-          "Consider setting SESSION_MODE=contexts to use separate browser contexts per court",
-          "WARN"
-        );
-        log(
-          "This typically resolves session sharing issues between parallel reservations",
-          "WARN"
-        );
-      }
     } else {
       // Sequential execution (SESSION_MODE=contexts or single court only)
       if (ARGS.sessionMode === "contexts") {
