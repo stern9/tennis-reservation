@@ -529,50 +529,13 @@ async function reservePhase(
       await calendarFrame.waitForLoadState("domcontentloaded");
     }
 
-    // Step 4: Poll for date unlock (replaces fixed delays)
-    log(
-      `Polling for date ${formatDateForUrl(targetDate)} to become clickable...`
-    );
-    const unlockStartTime = Date.now();
-    let lastPollSecond = -1;
-
-    try {
-      const unlockResult = await SiteAdapter.pollForDateUnlock({
-        page,
-        frame: calendarFrame,
-        targetDate,
-        pollIntervalMs: ARGS.unlockPollMs,
-        maxWaitMs: ARGS.unlockMaxMs,
-        onTick: (elapsed) => {
-          const seconds = Math.floor(elapsed / 1000);
-          if (seconds !== lastPollSecond) {
-            lastPollSecond = seconds;
-            log(`  Polling... ${Engine.formatMs(elapsed)}s elapsed`, "DEBUG");
-          }
-        },
-      });
-
-      telemetry.unlockMs = unlockResult.elapsedMs;
-
-      log(
-        `✅ Date unlocked after ${unlockResult.reloads} refreshes (T+${Engine.formatMs(
-          Date.now() - unlockStartTime
-        )}s)`,
-        "SUCCESS"
-      );
-    } catch (unlockError) {
-      throw new Error(
-        `DATE_NOT_AVAILABLE_YET - ${(unlockError as Error).message}`
-      );
-    }
-
-    // Step 5: Click date
+    // Step 4: Click date (Playwright will wait automatically for element)
     const formattedDate = formatDateForUrl(targetDate);
     log(`Clicking date ${formattedDate}...`);
     const dateSelector = `td[onclick*="${formattedDate}"]`;
     await calendarFrame.click(dateSelector);
 
-    // Step 6: Wait for day view iframe
+    // Step 5: Wait for day view iframe
     log("Waiting for day view...");
     const dayViewTimeoutMs = parseInt(
       process.env.DAY_VIEW_TIMEOUT_MS || "4500",
@@ -662,14 +625,14 @@ async function reservePhase(
 
     await takeScreenshot(page, "5-day-view");
 
-    // Step 7: Click "Solicitar Reserva" link
+    // Step 6: Click "Solicitar Reserva" link
     log("Opening reservation form...");
     await dayViewFrame.waitForSelector('a[href*="new_reservation.php"]', {
       timeout: 5000,
     });
     await dayViewFrame.click('a[href*="new_reservation.php"]');
 
-    // Step 8: Wait for form and select time slot
+    // Step 7: Wait for form and select time slot
     await page.waitForTimeout(500); // Brief wait for form iframe
 
     let formFrame = null;
@@ -690,7 +653,7 @@ async function reservePhase(
       "SUCCESS"
     );
 
-    // Step 9: Select time slot using SiteAdapter
+    // Step 8: Select time slot using SiteAdapter
     log(`Selecting time slot: ${timeSlot}...`);
     const slotResult = await SiteAdapter.selectTimeSlot(formFrame, timeSlot);
 
@@ -705,7 +668,7 @@ async function reservePhase(
     log(`Selected slot value: ${slotResult.selectedValue}`, "DEBUG");
     await takeScreenshot(page, "6-form-filled");
 
-    // Step 10: Check ALLOW_BOOKING dead-man switch
+    // Step 9: Check ALLOW_BOOKING dead-man switch
     const allowBooking =
       process.env.ALLOW_BOOKING === "1" ||
       (fs.existsSync("/tmp/allow_booking") && !ARGS.noBooking);
@@ -723,7 +686,7 @@ async function reservePhase(
 
     const shouldSubmit = !ARGS.shadowMode && allowBooking;
 
-    // Step 11: Submit (or skip in shadow mode)
+    // Step 10: Submit (or skip in shadow mode)
     if (ARGS.shadowMode) {
       log("🔮 SHADOW MODE: Skipping submission", "WARN");
       telemetry.submitMs = phaseTimer.elapsed();

@@ -37,7 +37,7 @@ export const SELECTORS = {
 
   // Calendar (iframe)
   calendar: {
-    clickableDay: (date: string) => `td.calendar-day_clickable[onclick*="${date}"]`,
+    clickableDay: (date: string) => `td[onclick*="${date}"]`,
     anyClickableDay: 'td.calendar-day_clickable',
   },
 

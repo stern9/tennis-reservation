@@ -9,16 +9,18 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 - **Court 2** on Tuesdays & Fridays at 7:00 AM
 
 **How it works:**
-- **11:58 PM Costa Rica time**: Script starts, waits for midnight
-- **12:00 AM**: Logs in to get fresh calendar with new dates
-- **12:00:05 AM**: Immediately reserves courts (no waiting for date propagation)
+- **11:58 PM Costa Rica time**: Script starts, waits until 30s before midnight
+- **11:59:30 PM**: Logs in to warm up session
+- **12:00:00 AM**: Midnight reached - calendar modal opened for first time (fresh data)
+- **12:00:07 AM**: Courts reserved immediately (Playwright waits automatically)
 - **Court 1**: 9 days ahead
 - **Court 2**: 8 days ahead
 - Sends email confirmation via Resend API
+- **Total time**: ~10-12 seconds (85% faster than original)
 
 **Technology:**
 - Built with **TypeScript** for type safety and maintainability
-- Uses **Puppeteer** for browser automation
+- Uses **Playwright** for fast browser automation
 - **Resend API** for email notifications
 - Timezone-aware using Costa Rica time (UTC-6)
 
@@ -326,21 +328,18 @@ You'll need:
 
 ### Step 1: Install System Dependencies
 
-Chrome/Puppeteer requires system libraries:
+Playwright/Chromium requires system libraries:
 
 ```bash
 sudo apt-get update
-
 sudo apt-get install -y \
-  libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64 \
-  libc6 libcairo2 libcups2t64 libdbus-1-3 libexpat1 \
-  libfontconfig1 libgcc-s1 libgdk-pixbuf2.0-0 \
-  libglib2.0-0t64 libgtk-3-0t64 libnspr4 libpango-1.0-0 \
-  libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 \
-  libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 \
-  libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 libxtst6 \
-  ca-certificates fonts-liberation libnss3 \
-  lsb-release xdg-utils wget libgbm1
+  libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+  libcups2 libdrm2 libdbus-1-3 libxkbcommon0 \
+  libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+  libgbm1 libpango-1.0-0 libcairo2 libasound2 libatspi2.0-0
+
+# Or use Playwright's auto-installer (recommended):
+npx playwright install-deps chromium
 ```
 
 ### Step 2: Clone and Setup
@@ -350,35 +349,40 @@ cd ~
 git clone https://github.com/yourusername/tennis-reservation.git
 cd tennis-reservation
 npm install
+npx playwright install chromium  # Install Playwright browser
 npm run build  # Compile TypeScript
 ```
 
 ### Step 3: Configure Environment
 
+Create `.env.cron` file for cron job:
+
 ```bash
-cp .env.example .env
-nano .env
+nano ~/.env.cron
 ```
 
 Add your credentials:
 
 ```bash
-TENNIS_USERNAME=your_username
-TENNIS_PASSWORD=your_password
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxx
-TO_EMAIL_ADDRESS=your@email.com
-FROM_EMAIL_ADDRESS=contact@yourdomain.com
+export TENNIS_USERNAME='your_username'
+export TENNIS_PASSWORD='your_password'
+export RESEND_API_KEY='re_xxxxxxxxxxxxxxxxxxxxx'
+export TO_EMAIL_ADDRESS='your@email.com'
+export FROM_EMAIL_ADDRESS='contact@yourdomain.com'
+export ALLOW_BOOKING=1
+export SHADOW_MODE=0
+export SESSION_MODE='single'
 ```
 
 **Secure the file:**
 
 ```bash
-chmod 600 .env  # Only owner can read/write
+chmod 600 ~/.env.cron  # Only owner can read/write
 ```
 
-**Note:** The script reads `.env` automatically via `dotenv`. No need to add to `~/.bashrc`.
+**Note:** For local testing, you can also create a `.env` file in the project directory - the script reads both.
 
-**For production:** Consider using 1Password CLI or similar vault instead of plain `.env` file (see `NEXT_STEPS.md`).
+**For production:** Consider using 1Password CLI or similar vault instead of plain text files (see `NEXT_STEPS.md`).
 
 ### Step 4: Test
 
@@ -401,7 +405,7 @@ Add these lines:
 0 3 * * * find /home/yourusername/tennis-reservation/logs/ -name "reservation-*.log" -mtime +30 -delete && find /home/yourusername/tennis-reservation/logs/ -name "cron.log" -mtime +90 -delete
 
 # Run reservation script at 11:58 PM Costa Rica time (5:58 AM UTC)
-58 5 * * * /path/to/node /home/yourusername/tennis-reservation/dist/scripts/reserve.js >> /home/yourusername/tennis-reservation/logs/cron.log 2>&1
+58 5 * * * bash -c 'source ~/.env.cron && /path/to/node /home/yourusername/tennis-reservation/dist/scripts/reserve.js' >> /home/yourusername/tennis-reservation/logs/cron.log 2>&1
 ```
 
 **Find your Node.js path:**
@@ -410,7 +414,7 @@ which node
 # Example output: /home/yourusername/.nvm/versions/node/v22.20.0/bin/node
 ```
 
-Use that full path in the cron job.
+Use that full path in the cron job. The `source ~/.env.cron` loads your environment variables for the cron job.
 
 **Verify cron is set:**
 ```bash
@@ -444,9 +448,11 @@ cd ~/tennis-reservation
 git pull
 npm install  # if dependencies changed
 npm run build  # rebuild TypeScript
+# If Playwright version changed:
+npx playwright install chromium
 ```
 
-No need to restart - cron will use updated compiled code on next run.
+No need to restart cron - it will use updated compiled code on next run.
 
 ## 📝 Notes
 
