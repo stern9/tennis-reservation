@@ -78,7 +78,8 @@ const CONFIG: AppConfig = {
         Tuesday: "07:00 AM - 08:00 AM",
         Wednesday: "07:00 AM - 08:00 AM",
         Thursday: "07:00 AM - 08:00 AM",
-        Friday: "07:00 AM - 08:00 AM",
+        // Friday: "07:00 AM - 08:00 AM",
+        Friday: "06:00 AM - 07:00 AM",
       },
     },
   },
@@ -595,9 +596,7 @@ async function reservePhase(
         "DEBUG"
       );
 
-      allFrames.forEach((f, idx) =>
-        log(`  Frame ${idx}: ${f.url()}`, "DEBUG")
-      );
+      allFrames.forEach((f, idx) => log(`  Frame ${idx}: ${f.url()}`, "DEBUG"));
 
       // Check for "date not available" message
       for (const f of allFrames) {
@@ -914,7 +913,9 @@ async function main(): Promise<void> {
 
       if (msUntilNextCRMidnight() > loginLeadMs) {
         log(
-          `Waiting until ${Math.round(loginLeadMs / 1000)}s before midnight to log in...`
+          `Waiting until ${Math.round(
+            loginLeadMs / 1000
+          )}s before midnight to log in...`
         );
         await waitUntilPreMidnightWindow(loginLeadMs);
       }
