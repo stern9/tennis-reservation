@@ -74,7 +74,7 @@ export interface Args {
   canaryMode: boolean;
   mockUnlock: boolean;
   noBooking: boolean;
-  sessionMode: 'single' | 'contexts';
+  sessionMode: "single" | "contexts";
   unlockMaxMs: number;
   unlockPollMs: number;
   navMs: number;

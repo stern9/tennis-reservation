@@ -8,8 +8,8 @@
  * - Form submission with value-based slot selection
  */
 
-import { Page, Frame } from 'playwright';
-import { formatDateForUrl } from './time-cr';
+import { Page, Frame } from "playwright";
+import { formatDateForUrl } from "./time-cr";
 
 // ============================================================================
 // CONSTANTS
@@ -30,15 +30,15 @@ export const SELECTORS = {
 
   // Pre-reservation modal (iframe)
   preReservation: {
-    iframe: 'iframe',
-    areaSelect: '#area',
-    continueButton: 'input#btn_cont',
+    iframe: "iframe",
+    areaSelect: "#area",
+    continueButton: "input#btn_cont",
   },
 
   // Calendar (iframe)
   calendar: {
     clickableDay: (date: string) => `td[onclick*="${date}"]`,
-    anyClickableDay: 'td.calendar-day_clickable',
+    anyClickableDay: "td.calendar-day_clickable",
   },
 
   // Day view (nested iframe)
@@ -48,26 +48,26 @@ export const SELECTORS = {
 
   // Reservation form (nested iframe)
   form: {
-    scheduleSelect: '#schedule',
-    submitButton: '#save_btn',
+    scheduleSelect: "#schedule",
+    submitButton: "#save_btn",
   },
 };
 
 // Time slot value mappings (database IDs from the form)
 export const TIME_SLOT_VALUES: Record<string, string> = {
-  '06:00 AM - 07:00 AM': '243',
-  '07:00 AM - 08:00 AM': '250',
-  '08:00 AM - 09:00 AM': '257',
-  '09:00 AM - 10:00 AM': '264',
-  '10:00 AM - 11:00 AM': '271',
-  '11:00 AM - 12:00 PM': '278',
-  '12:00 PM - 01:00 PM': '285',
-  '01:00 PM - 02:00 PM': '292',
-  '02:00 PM - 03:00 PM': '299',
-  '03:00 PM - 04:00 PM': '306',
-  '04:00 PM - 05:00 PM': '313',
-  '05:00 PM - 06:00 PM': '320',
-  '06:00 PM - 07:00 PM': '327',
+  "06:00 AM - 07:00 AM": "243",
+  "07:00 AM - 08:00 AM": "250",
+  "08:00 AM - 09:00 AM": "257",
+  "09:00 AM - 10:00 AM": "264",
+  "10:00 AM - 11:00 AM": "271",
+  "11:00 AM - 12:00 PM": "278",
+  "12:00 PM - 01:00 PM": "285",
+  "01:00 PM - 02:00 PM": "292",
+  "02:00 PM - 03:00 PM": "299",
+  "03:00 PM - 04:00 PM": "306",
+  "04:00 PM - 05:00 PM": "313",
+  "05:00 PM - 06:00 PM": "320",
+  "06:00 PM - 07:00 PM": "327",
 };
 
 // ============================================================================
@@ -101,7 +101,11 @@ export function buildCalendarUrl(options: UrlOptions): string {
 /**
  * Build direct day view URL (if needed for optimization)
  */
-export function buildDayViewUrl(baseUrl: string, date: Date, areaId: string): string {
+export function buildDayViewUrl(
+  baseUrl: string,
+  date: Date,
+  areaId: string,
+): string {
   const formattedDate = formatDateForUrl(date);
   return `${baseUrl}day.php?day=${formattedDate}&area=${areaId}&ts=${Date.now()}`;
 }
@@ -113,13 +117,16 @@ export function buildDayViewUrl(baseUrl: string, date: Date, areaId: string): st
 /**
  * Wait for and return the first iframe in the page
  */
-export async function waitForIframe(page: Page, timeout = 10000): Promise<Frame> {
+export async function waitForIframe(
+  page: Page,
+  timeout = 10000,
+): Promise<Frame> {
   await page.waitForSelector(SELECTORS.preReservation.iframe, { timeout });
   const frames = page.frames();
-  const iframe = frames.find(f => f.parentFrame() === page.mainFrame());
+  const iframe = frames.find((f) => f.parentFrame() === page.mainFrame());
 
   if (!iframe) {
-    throw new Error('Could not find iframe');
+    throw new Error("Could not find iframe");
   }
 
   return iframe;
@@ -128,20 +135,23 @@ export async function waitForIframe(page: Page, timeout = 10000): Promise<Frame>
 /**
  * Wait for and return nested iframe (iframe within iframe)
  */
-export async function waitForNestedIframe(page: Page, timeout = 10000): Promise<Frame> {
+export async function waitForNestedIframe(
+  page: Page,
+  timeout = 10000,
+): Promise<Frame> {
   // Wait for frames to load
   await page.waitForTimeout(500); // Small delay for nested iframe to appear
 
   const frames = page.frames();
 
   // Find nested iframe (one whose parent is also an iframe)
-  const nestedIframe = frames.find(f => {
+  const nestedIframe = frames.find((f) => {
     const parent = f.parentFrame();
     return parent && parent !== page.mainFrame();
   });
 
   if (!nestedIframe) {
-    throw new Error('Could not find nested iframe');
+    throw new Error("Could not find nested iframe");
   }
 
   return nestedIframe;
@@ -152,7 +162,7 @@ export async function waitForNestedIframe(page: Page, timeout = 10000): Promise<
 // ============================================================================
 
 export interface UnlockPollOptions {
-  page?: Page;  // Optional - for screenshot on failure
+  page?: Page; // Optional - for screenshot on failure
   frame: Frame;
   targetDate: Date;
   pollIntervalMs?: number;
@@ -172,7 +182,7 @@ export interface UnlockPollResult {
  * Returns elapsed time in milliseconds when date becomes clickable
  */
 export async function pollForDateUnlock(
-  options: UnlockPollOptions
+  options: UnlockPollOptions,
 ): Promise<UnlockPollResult> {
   const {
     page,
@@ -209,7 +219,7 @@ export async function pollForDateUnlock(
         }
       } catch (reloadError) {
         console.log(
-          `[DEBUG] Calendar reload failed: ${(reloadError as Error).message}`
+          `[DEBUG] Calendar reload failed: ${(reloadError as Error).message}`,
         );
       }
     }
@@ -284,14 +294,19 @@ export async function pollForDateUnlock(
   }
 
   throw new Error(
-    `Date not clickable after ${maxWaitMs}ms (${attempts} attempts, ${reloads} refreshes) - selector: ${selector} - last state: ${lastState || "none"}`
+    `Date not clickable after ${maxWaitMs}ms (${attempts} attempts, ${reloads} refreshes) - selector: ${selector} - last state: ${
+      lastState || "none"
+    }`,
   );
 }
 
 /**
  * Alternative: Wait for any clickable day (for testing/debugging)
  */
-export async function waitForAnyClickableDay(frame: Frame, timeout = 15000): Promise<void> {
+export async function waitForAnyClickableDay(
+  frame: Frame,
+  timeout = 15000,
+): Promise<void> {
   await frame.waitForSelector(SELECTORS.calendar.anyClickableDay, { timeout });
 }
 
@@ -310,7 +325,7 @@ export interface SlotSelectionResult {
  */
 export async function selectTimeSlot(
   frame: Frame,
-  timeSlot: string
+  timeSlot: string,
 ): Promise<SlotSelectionResult> {
   await frame.waitForSelector(SELECTORS.form.scheduleSelect, { timeout: 5000 });
 
@@ -321,17 +336,21 @@ export async function selectTimeSlot(
     // Select by database ID (most reliable)
     const valueExists = await frame.evaluate(
       ({ selectId, value }) => {
-        const select = document.getElementById(selectId) as HTMLSelectElement | null;
+        const select = document.getElementById(
+          selectId,
+        ) as HTMLSelectElement | null;
         if (!select) return false;
 
-        const option = Array.from(select.options).find(opt => opt.value === value);
+        const option = Array.from(select.options).find(
+          (opt) => opt.value === value,
+        );
         if (option) {
           select.value = value;
           return true;
         }
         return false;
       },
-      { selectId: 'schedule', value: slotValue }
+      { selectId: "schedule", value: slotValue },
     );
 
     if (valueExists) {
@@ -342,12 +361,15 @@ export async function selectTimeSlot(
   // Fallback to text matching (for robustness)
   const textMatch = await frame.evaluate(
     ({ selectId, targetText }) => {
-      const select = document.getElementById(selectId) as HTMLSelectElement | null;
-      if (!select) return { success: false, error: 'Select element not found' };
+      const select = document.getElementById(
+        selectId,
+      ) as HTMLSelectElement | null;
+      if (!select) return { success: false, error: "Select element not found" };
 
-      const startTime = targetText.split(' - ')[0];
-      const option = Array.from(select.options).find(opt =>
-        opt.text.includes(startTime)
+      const startTime = targetText.split(" - ")[0];
+
+      const option = Array.from(select.options).find((opt) =>
+        opt.text.trim().startsWith(`De ${startTime}`),
       );
 
       if (option) {
@@ -360,7 +382,7 @@ export async function selectTimeSlot(
         error: `No option found matching "${targetText}"`,
       };
     },
-    { selectId: 'schedule', targetText: timeSlot }
+    { selectId: "schedule", targetText: timeSlot },
   );
 
   return textMatch;
@@ -371,7 +393,7 @@ export async function selectTimeSlot(
  */
 export async function submitReservation(
   frame: Frame,
-  shadowMode: boolean
+  shadowMode: boolean,
 ): Promise<{ submitted: boolean; timestamp?: number }> {
   await frame.waitForSelector(SELECTORS.form.submitButton, { timeout: 5000 });
 
@@ -380,14 +402,17 @@ export async function submitReservation(
   }
 
   // Click submit
-  await frame.evaluate(({ buttonId }) => {
-    const btn = document.getElementById(buttonId) as HTMLElement | null;
-    if (btn) {
-      btn.click();
-    } else {
-      throw new Error('Submit button not found');
-    }
-  }, { buttonId: 'save_btn' });
+  await frame.evaluate(
+    ({ buttonId }) => {
+      const btn = document.getElementById(buttonId) as HTMLElement | null;
+      if (btn) {
+        btn.click();
+      } else {
+        throw new Error("Submit button not found");
+      }
+    },
+    { buttonId: "save_btn" },
+  );
 
   return { submitted: true, timestamp: Date.now() };
 }
@@ -447,7 +472,7 @@ export interface NavigateToCalendarOptions {
  */
 export async function navigateToCalendar(
   options: NavigateToCalendarOptions,
-  targetDate: Date
+  targetDate: Date,
 ): Promise<Frame> {
   const { page, areaId, baseUrl } = options;
 
@@ -460,7 +485,7 @@ export async function navigateToCalendar(
   });
 
   // Navigate to calendar in iframe
-  await page.goto(calendarUrl, { waitUntil: 'domcontentloaded' });
+  await page.goto(calendarUrl, { waitUntil: "domcontentloaded" });
 
   // Return the calendar frame (for iframe-based navigation, adjust as needed)
   return waitForIframe(page);
@@ -477,7 +502,7 @@ export async function openReservationsModal(page: Page): Promise<Frame> {
   // Click reservations link (opens Shadowbox modal with iframe)
   await page.evaluate(() => {
     const link = document.querySelector<HTMLAnchorElement>(
-      'a[href="pre_reservations.php"]'
+      'a[href="pre_reservations.php"]',
     );
     if (link) {
       link.click();
@@ -493,7 +518,7 @@ export async function openReservationsModal(page: Page): Promise<Frame> {
  */
 export async function selectAreaAndContinue(
   frame: Frame,
-  areaId: string
+  areaId: string,
 ): Promise<void> {
   await frame.waitForSelector(SELECTORS.preReservation.areaSelect, {
     timeout: 10000,
@@ -512,5 +537,5 @@ export async function selectAreaAndContinue(
   await frame.click(SELECTORS.preReservation.continueButton);
 
   // Wait for calendar to load
-  await frame.waitForLoadState('domcontentloaded');
+  await frame.waitForLoadState("domcontentloaded");
 }

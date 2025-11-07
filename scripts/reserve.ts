@@ -76,11 +76,13 @@ const CONFIG: AppConfig = {
       name: "Cancha de Tenis 2",
       daysAhead: 8, // Court 2 becomes available 8 days in advance
       slots: {
+        Monday: "07:00 AM - 08:00 AM",
         Tuesday: "07:00 AM - 08:00 AM",
         Wednesday: "07:00 AM - 08:00 AM",
         Thursday: "07:00 AM - 08:00 AM",
         Friday: "07:00 AM - 08:00 AM",
         Saturday: "07:00 AM - 08:00 AM",
+        Sunday: "07:00 AM - 08:00 AM",
       },
     },
   },
@@ -156,7 +158,7 @@ if (!fs.existsSync(logDir)) {
 
 const logFile = path.join(
   logDir,
-  `reservation-${new Date().toISOString().split("T")[0]}.log`
+  `reservation-${new Date().toISOString().split("T")[0]}.log`,
 );
 
 function log(message: string, level: string = "INFO"): void {
@@ -179,7 +181,7 @@ function initScreenshotSession(): string | null {
 
   const sessionDir = path.join(
     screenshotDir,
-    new Date().toISOString().replace(/:/g, "-")
+    new Date().toISOString().replace(/:/g, "-"),
   );
   if (!fs.existsSync(sessionDir)) {
     fs.mkdirSync(sessionDir, { recursive: true });
@@ -202,7 +204,7 @@ async function takeScreenshot(page: Page, name: string): Promise<void> {
   } catch (error) {
     log(
       `Failed to take screenshot ${name}: ${(error as Error).message}`,
-      "WARN"
+      "WARN",
     );
   }
 }
@@ -251,7 +253,7 @@ function waitUntilMidnight(): Promise<void> {
         const timeLeft = (60 - seconds) * 1000;
         log(
           `⏰ Waiting for midnight... Current CR time: ${crTime.toLocaleTimeString()}`,
-          "INFO"
+          "INFO",
         );
         setTimeout(checkMidnight, Math.min(timeLeft, 1000));
       }
@@ -283,14 +285,14 @@ async function waitUntilPreMidnightWindow(offsetMs: number): Promise<void> {
     const waitMs = Math.min(remainingMs - offsetMs, 30000);
     const remainingSeconds = Math.max(
       0,
-      Math.round((remainingMs - offsetMs) / 1000)
+      Math.round((remainingMs - offsetMs) / 1000),
     );
 
     log(
       `🕒 ${remainingSeconds}s until login window (midnight minus ${Math.round(
-        offsetMs / 1000
+        offsetMs / 1000,
       )}s)`,
-      "INFO"
+      "INFO",
     );
 
     await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -304,7 +306,7 @@ async function waitUntilPreMidnightWindow(offsetMs: number): Promise<void> {
 async function sendEmail(
   subject: string,
   body: string,
-  attachScreenshots: boolean = false
+  attachScreenshots: boolean = false,
 ): Promise<void> {
   if (!CONFIG.resendApiKey) {
     log("RESEND_API_KEY not configured, skipping email notification", "WARN");
@@ -400,7 +402,7 @@ async function loginPhase(browser: Browser): Promise<Page> {
     } catch (selectorError) {
       // Log page content if selector not found
       const bodyText = await page.evaluate(() =>
-        document.body.innerText.substring(0, 500)
+        document.body.innerText.substring(0, 500),
       );
       log(`Page content snapshot: ${bodyText}`, "DEBUG");
       throw selectorError;
@@ -426,7 +428,7 @@ async function reservePhase(
   courtConfig: CourtConfig,
   targetDate: Date,
   timeSlot: string,
-  t0Time?: number
+  t0Time?: number,
 ): Promise<ReservationResult> {
   const phaseTimer = Engine.createTimer();
   const telemetry = {
@@ -439,7 +441,7 @@ async function reservePhase(
     log(
       `🎾 Phase 2: Reserving ${
         courtConfig.name
-      } on ${targetDate.toDateString()} at ${timeSlot}`
+      } on ${targetDate.toDateString()} at ${timeSlot}`,
     );
 
     // T0 telemetry
@@ -462,7 +464,7 @@ async function reservePhase(
 
     const frames = page.frames();
     const calendarFrame = frames.find((f) =>
-      f.url().includes("reservations.php")
+      f.url().includes("reservations.php"),
     );
 
     if (!calendarFrame) {
@@ -493,7 +495,7 @@ async function reservePhase(
       ];
       const headerText = document.body.innerText;
       const monthMatch = headerText.match(
-        /(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(\d{4})/i
+        /(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+(\d{4})/i,
       );
       if (monthMatch) {
         const monthIndex = monthNames.indexOf(monthMatch[1].toUpperCase()) + 1;
@@ -504,7 +506,7 @@ async function reservePhase(
 
     log(
       `Calendar showing: ${currentCalendarMonth?.month}/${currentCalendarMonth?.year}, Target: ${targetMonth}/${targetYear}`,
-      "DEBUG"
+      "DEBUG",
     );
 
     // Navigate to target month if needed
@@ -526,7 +528,7 @@ async function reservePhase(
         }) => {
           window.location.href = `reservations.php?month=${month}&year=${year}&area=${areaId}`;
         },
-        { month: targetMonth, year: targetYear, areaId: courtConfig.areaId }
+        { month: targetMonth, year: targetYear, areaId: courtConfig.areaId },
       );
       await calendarFrame.waitForLoadState("domcontentloaded");
     }
@@ -541,7 +543,7 @@ async function reservePhase(
     log("Waiting for day view...");
     const dayViewTimeoutMs = parseInt(
       process.env.DAY_VIEW_TIMEOUT_MS || "4500",
-      10
+      10,
     );
     const dayViewStart = Date.now();
     let dayViewFrame: Frame | null = null;
@@ -584,17 +586,17 @@ async function reservePhase(
     if (dayViewFrame) {
       log(
         `Found day view frame after ${Engine.formatMs(
-          Date.now() - dayViewStart
+          Date.now() - dayViewStart,
         )}s`,
-        "DEBUG"
+        "DEBUG",
       );
     }
     if (!dayViewFrame) {
       log(
         `Day view not found after ${Engine.formatMs(
-          Date.now() - dayViewStart
+          Date.now() - dayViewStart,
         )}s – inspecting frames (${allFrames.length} total)`,
-        "DEBUG"
+        "DEBUG",
       );
 
       allFrames.forEach((f, idx) => log(`  Frame ${idx}: ${f.url()}`, "DEBUG"));
@@ -603,7 +605,7 @@ async function reservePhase(
       for (const f of allFrames) {
         try {
           const text = await f.evaluate(() =>
-            document.body.innerText.toLowerCase()
+            document.body.innerText.toLowerCase(),
           );
           if (
             text.includes("aún no está disponible") ||
@@ -611,7 +613,7 @@ async function reservePhase(
             text.includes("no se encuentra habilitada")
           ) {
             throw new Error(
-              "DATE_NOT_AVAILABLE_YET - Date not available for reservation yet"
+              "DATE_NOT_AVAILABLE_YET - Date not available for reservation yet",
             );
           }
         } catch (e) {
@@ -650,7 +652,7 @@ async function reservePhase(
     telemetry.formReadyMs = phaseTimer.elapsed();
     log(
       `✅ Form ready at T+${Engine.formatMs(telemetry.formReadyMs)}s`,
-      "SUCCESS"
+      "SUCCESS",
     );
 
     // Step 8: Select time slot using SiteAdapter
@@ -661,7 +663,7 @@ async function reservePhase(
       throw new Error(
         `TIME_SLOT_NOT_FOUND: ${
           slotResult.error || `Could not find time slot: ${timeSlot}`
-        }`
+        }`,
       );
     }
 
@@ -676,11 +678,11 @@ async function reservePhase(
     if (!allowBooking && !ARGS.shadowMode) {
       log(
         "⚠️  ALLOW_BOOKING not set - submission blocked by dead-man switch",
-        "WARN"
+        "WARN",
       );
       log(
         "To enable real bookings, set ALLOW_BOOKING=1 or create /tmp/allow_booking",
-        "WARN"
+        "WARN",
       );
     }
 
@@ -692,7 +694,7 @@ async function reservePhase(
       telemetry.submitMs = phaseTimer.elapsed();
       log(
         `Would have submitted at T+${Engine.formatMs(telemetry.submitMs)}s`,
-        "WARN"
+        "WARN",
       );
 
       return {
@@ -723,14 +725,14 @@ async function reservePhase(
     if (ARGS.watchMode) {
       log(
         "WATCH MODE: Pausing 5 seconds before submission. Browser will stay open.",
-        "DEBUG"
+        "DEBUG",
       );
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
     const submitResult = await SiteAdapter.submitReservation(
       formFrame,
-      ARGS.shadowMode
+      ARGS.shadowMode,
     );
 
     telemetry.submitMs = phaseTimer.elapsed();
@@ -747,14 +749,14 @@ async function reservePhase(
       const allFrameUrls = page.frames().map((f) => f.url());
       log(
         `Failed to find result frame. All frames: ${JSON.stringify(
-          allFrameUrls
+          allFrameUrls,
         )}`,
-        "ERROR"
+        "ERROR",
       );
       throw new Error(
         `Timed out waiting for reservation result frame: ${
           (waitError as Error).message
-        }`
+        }`,
       );
     }
 
@@ -766,13 +768,13 @@ async function reservePhase(
     if (ARGS.debugMode) {
       await dumpFrameContent(
         resultFrame,
-        path.join(currentScreenshotSession || ".", "submission-result.txt")
+        path.join(currentScreenshotSession || ".", "submission-result.txt"),
       );
     }
 
     log(
       `Detection result: ${errorResult.type} - ${errorResult.message}`,
-      "DEBUG"
+      "DEBUG",
     );
 
     if (errorResult.type === "SUCCESS") {
@@ -780,7 +782,7 @@ async function reservePhase(
         `✅ SUCCESS: Reserved ${
           courtConfig.name
         } on ${targetDate.toDateString()} at ${timeSlot}`,
-        "SUCCESS"
+        "SUCCESS",
       );
       return {
         success: true,
@@ -799,14 +801,14 @@ async function reservePhase(
       if (ARGS.debugMode) {
         await dumpAllFrames(
           page,
-          path.join(currentScreenshotSession || ".", "all-frames-unknown.txt")
+          path.join(currentScreenshotSession || ".", "all-frames-unknown.txt"),
         );
       }
       const extra = errorResult.rawMessage
         ? ` - Raw: "${errorResult.rawMessage}"`
         : "";
       throw new Error(
-        `UNKNOWN_ERROR: Could not classify reservation response - ${errorResult.message}${extra}`
+        `UNKNOWN_ERROR: Could not classify reservation response - ${errorResult.message}${extra}`,
       );
     }
   } catch (error) {
@@ -846,7 +848,7 @@ async function performLogin(page: Page, courtName: string = ""): Promise<Page> {
     if (!usernameInput || !passwordInput) {
       log(
         `Could not find login inputs by name, trying by type...${label}`,
-        "DEBUG"
+        "DEBUG",
       );
       const textInput = await page.$('input[type="text"]');
       const passInput = await page.$('input[type="password"]');
@@ -878,7 +880,7 @@ async function performLogin(page: Page, courtName: string = ""): Promise<Page> {
       });
     } catch (selectorError) {
       const bodyText = await page.evaluate(() =>
-        document.body.innerText.substring(0, 500)
+        document.body.innerText.substring(0, 500),
       );
       log(`Page content snapshot${label}: ${bodyText}`, "DEBUG");
       throw selectorError;
@@ -907,7 +909,7 @@ async function main(): Promise<void> {
   log(
     `Mode: ${ARGS.test ? "TEST" : "PRODUCTION"}${
       ARGS.dryRun ? " (DRY RUN)" : ""
-    }${ARGS.debugMode ? " (DEBUG)" : ""}${ARGS.shadowMode ? " (SHADOW)" : ""}`
+    }${ARGS.debugMode ? " (DEBUG)" : ""}${ARGS.shadowMode ? " (SHADOW)" : ""}`,
   );
 
   const results: ReservationResult[] = [];
@@ -926,14 +928,14 @@ async function main(): Promise<void> {
       const serverTimeResult = await Engine.getServerTime(CONFIG.loginUrl);
       log(
         `Server time: ${serverTimeResult.serverTime.toISOString()}, Local time: ${serverTimeResult.localTime.toISOString()}`,
-        "DEBUG"
+        "DEBUG",
       );
       log(`Server skew: ${serverTimeResult.skewMs}ms`, "DEBUG");
 
       if (Math.abs(serverTimeResult.skewMs) > 1000) {
         log(
           `⚠️  Significant time skew detected: ${serverTimeResult.skewMs}ms`,
-          "WARN"
+          "WARN",
         );
       }
     }
@@ -959,7 +961,7 @@ async function main(): Promise<void> {
       // This ensures we use the correct "today" value (Oct 10), not the stale value from 11:58 PM (Oct 9)
       log(
         "Production mode: Target dates will be calculated after midnight",
-        "DEBUG"
+        "DEBUG",
       );
     } else {
       log("ERROR: Test mode requires --target-date parameter", "ERROR");
@@ -998,19 +1000,19 @@ async function main(): Promise<void> {
       if (msUntilNextCRMidnight() > loginLeadMs) {
         log(
           `Waiting until ${Math.round(
-            loginLeadMs / 1000
-          )}s before midnight to log in...`
+            loginLeadMs / 1000,
+          )}s before midnight to log in...`,
         );
         await waitUntilPreMidnightWindow(loginLeadMs);
       }
 
       const secondsUntilMidnight = Math.max(
         0,
-        Math.round(msUntilNextCRMidnight() / 1000)
+        Math.round(msUntilNextCRMidnight() / 1000),
       );
       log(
         `🚪 Entering login window: ${secondsUntilMidnight}s until midnight`,
-        "INFO"
+        "INFO",
       );
     }
 
@@ -1060,8 +1062,8 @@ async function main(): Promise<void> {
       if (remainingToMidnight > 0) {
         log(
           `⏳ Waiting ${Math.ceil(
-            remainingToMidnight / 1000
-          )}s for midnight after login...`
+            remainingToMidnight / 1000,
+          )}s for midnight after login...`,
         );
         await waitUntilMidnight();
       } else {
@@ -1091,13 +1093,13 @@ async function main(): Promise<void> {
         `Production target Court 1: ${ymdCR(targetDateCourt1)} (${
           CONFIG.courts.court1.daysAhead
         } days from CR today)`,
-        "DEBUG"
+        "DEBUG",
       );
       log(
         `Production target Court 2: ${ymdCR(targetDateCourt2)} (${
           CONFIG.courts.court2.daysAhead
         } days from CR today)`,
-        "DEBUG"
+        "DEBUG",
       );
 
       const dayOfWeek1 = getDayOfWeek(targetDateCourt1);
@@ -1110,7 +1112,7 @@ async function main(): Promise<void> {
       // Test mode with delay - simulate production timing
       const delaySeconds = parseInt(ARGS.testDelay, 10);
       log(
-        `⏰ TEST DELAY: Waiting ${delaySeconds} seconds before Phase 2 (simulating production timing)...`
+        `⏰ TEST DELAY: Waiting ${delaySeconds} seconds before Phase 2 (simulating production timing)...`,
       );
 
       let remaining = delaySeconds;
@@ -1129,7 +1131,7 @@ async function main(): Promise<void> {
     // Safety check - ensure dates were calculated
     if (!targetDateCourt1 || !targetDateCourt2) {
       throw new Error(
-        "Target dates were not calculated - this should never happen"
+        "Target dates were not calculated - this should never happen",
       );
     }
 
@@ -1154,11 +1156,11 @@ async function main(): Promise<void> {
       log("=== DRY RUN MODE - NO ACTUAL RESERVATIONS WILL BE MADE ===");
       if (shouldReserveCourt1)
         log(
-          `Would reserve: Court 1 on ${targetDateCourt1.toDateString()} at ${court1TimeSlot}`
+          `Would reserve: Court 1 on ${targetDateCourt1.toDateString()} at ${court1TimeSlot}`,
         );
       if (shouldReserveCourt2)
         log(
-          `Would reserve: Court 2 on ${targetDateCourt2.toDateString()} at ${court2TimeSlot}`
+          `Would reserve: Court 2 on ${targetDateCourt2.toDateString()} at ${court2TimeSlot}`,
         );
       return;
     }
@@ -1171,7 +1173,7 @@ async function main(): Promise<void> {
     ) {
       log(
         "🚀 SESSION_MODE=single: Executing both courts in parallel with separate sessions",
-        "INFO"
+        "INFO",
       );
 
       // loginPage2 was already created and logged in during Phase 1
@@ -1189,7 +1191,7 @@ async function main(): Promise<void> {
             CONFIG.courts.court1,
             targetDateCourt1,
             court1TimeSlot,
-            t0Time
+            t0Time,
           );
         })(),
         (async () => {
@@ -1199,7 +1201,7 @@ async function main(): Promise<void> {
             CONFIG.courts.court2,
             targetDateCourt2,
             court2TimeSlot,
-            t0Time
+            t0Time,
           );
         })(),
       ]);
@@ -1230,7 +1232,7 @@ async function main(): Promise<void> {
       if (ARGS.sessionMode === "contexts") {
         log(
           "SESSION_MODE=contexts: Executing courts sequentially with separate sessions",
-          "INFO"
+          "INFO",
         );
       }
 
@@ -1242,7 +1244,7 @@ async function main(): Promise<void> {
             CONFIG.courts.court1,
             targetDateCourt1,
             court1TimeSlot,
-            t0Time
+            t0Time,
           );
           results.push(result);
         } catch (error) {
@@ -1266,7 +1268,7 @@ async function main(): Promise<void> {
           // Both courts running - need separate context to avoid interference
           log(
             "Creating separate context for Court 2 (both courts active)",
-            "DEBUG"
+            "DEBUG",
           );
           const context2 = await browser.newContext();
           loginPage2 = await context2.newPage();
@@ -1281,11 +1283,11 @@ async function main(): Promise<void> {
 
             await loginPage2.fill(
               'input[name="number"]',
-              String(CONFIG.username)
+              String(CONFIG.username),
             );
             await loginPage2.fill(
               'input[name="pass"]',
-              String(CONFIG.password)
+              String(CONFIG.password),
             );
             await loginPage2.click('button, input[type="submit"]');
             await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -1295,13 +1297,13 @@ async function main(): Promise<void> {
             log("Court 2 login successful", "DEBUG");
           } catch (error) {
             throw new Error(
-              `Court 2 login failed: ${(error as Error).message}`
+              `Court 2 login failed: ${(error as Error).message}`,
             );
           }
         } else {
           log(
             "Reusing existing session for Court 2 (single court mode)",
-            "DEBUG"
+            "DEBUG",
           );
         }
 
@@ -1311,7 +1313,7 @@ async function main(): Promise<void> {
             CONFIG.courts.court2,
             targetDateCourt2,
             court2TimeSlot,
-            t0Time
+            t0Time,
           );
           results.push(result);
         } catch (error) {
@@ -1345,13 +1347,13 @@ async function main(): Promise<void> {
         if (r.telemetry) {
           emailBody += `   📊 Performance:\n`;
           emailBody += `      Unlock: T+${Engine.formatMs(
-            r.telemetry.unlockMs
+            r.telemetry.unlockMs,
           )}s\n`;
           emailBody += `      Form ready: T+${Engine.formatMs(
-            r.telemetry.formReadyMs
+            r.telemetry.formReadyMs,
           )}s\n`;
           emailBody += `      Submit: T+${Engine.formatMs(
-            r.telemetry.submitMs
+            r.telemetry.submitMs,
           )}s\n`;
         }
         emailBody += "\n";
@@ -1379,10 +1381,10 @@ async function main(): Promise<void> {
       results.length > 0 && errors.length === 0
         ? `Reservations Confirmed ✅ (${results.length}/${results.length})`
         : results.length > 0 && errors.length > 0
-        ? `Partial Success ⚠️ (${results.length}/${
-            results.length + errors.length
-          })`
-        : `Reservation Failed ❌`;
+          ? `Partial Success ⚠️ (${results.length}/${
+              results.length + errors.length
+            })`
+          : `Reservation Failed ❌`;
 
     // Add test/shadow prefix to subject
     const emailSubject =
@@ -1404,7 +1406,7 @@ async function main(): Promise<void> {
     log(`Stack trace: ${err.stack}`, "ERROR");
     await sendEmail(
       "Reservation Script Error ❌",
-      `Fatal error occurred:\n\n${err.stack}`
+      `Fatal error occurred:\n\n${err.stack}`,
     );
     cleanupScreenshots();
     process.exit(1);

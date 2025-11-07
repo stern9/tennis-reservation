@@ -16,7 +16,7 @@ import * as path from "path";
  */
 export async function waitForReservationIframe(
   page: Page,
-  options: { timeout?: number } = {}
+  options: { timeout?: number } = {},
 ): Promise<Frame> {
   const { timeout = 12000 } = options;
 
@@ -29,9 +29,9 @@ export async function waitForReservationIframe(
   let frame: Frame | undefined;
 
   while (!frame && Date.now() - startTime < timeout) {
-    frame = page.frames().find(f => responseFramePattern.test(f.url()));
+    frame = page.frames().find((f) => responseFramePattern.test(f.url()));
     if (!frame) {
-      await new Promise(resolve => setTimeout(resolve, 100)); // Poll every 100ms
+      await new Promise((resolve) => setTimeout(resolve, 100)); // Poll every 100ms
     }
   }
 
@@ -41,7 +41,7 @@ export async function waitForReservationIframe(
 
   // Wait for DOM to be ready
   try {
-    await frame.waitForLoadState('domcontentloaded', { timeout: 3000 });
+    await frame.waitForLoadState("domcontentloaded", { timeout: 3000 });
   } catch {
     // Ignore timeout, content might already be loaded
   }
@@ -69,7 +69,7 @@ export async function getAllFramesText(page: Page): Promise<FrameData[]> {
           innerHTMLSnippet: document.body.innerHTML.substring(0, 5000),
         })),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 3000)
+          setTimeout(() => reject(new Error("Timeout")), 3000),
         ),
       ]);
       allText.push(data);
@@ -86,7 +86,7 @@ export async function getAllFramesText(page: Page): Promise<FrameData[]> {
  */
 export async function dumpFrameContent(
   frame: Frame,
-  filename: string
+  filename: string,
 ): Promise<void> {
   try {
     const html = await frame.content();
@@ -103,13 +103,13 @@ export async function dumpFrameContent(
  */
 export async function dumpAllFrames(
   page: Page,
-  filename: string
+  filename: string,
 ): Promise<void> {
   const framesData = await getAllFramesText(page);
   const output = framesData
     .map(
       (f, i) =>
-        `=== FRAME ${i} ===\nURL: ${f.url}\nTitle: ${f.title}\n\n${f.bodyText}\n\n`
+        `=== FRAME ${i} ===\nURL: ${f.url}\nTitle: ${f.title}\n\n${f.bodyText}\n\n`,
     )
     .join("\n");
 
@@ -131,9 +131,11 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
 
   // If no APP marker, fallback to body text parsing
   // This handles display_reservation.php which doesn't use APP markers
-  const messageToCheck = canonicalMessage || (await frame
-    .evaluate(() => document.body.innerText.trim())
-    .catch(() => ""));
+  const messageToCheck =
+    canonicalMessage ||
+    (await frame
+      .evaluate(() => document.body.innerText.trim())
+      .catch(() => ""));
 
   if (!messageToCheck) {
     return {
@@ -159,10 +161,9 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
   //  - "Las reservaciones seran habilitadas 9 dias antes"
   // NOTE: Website bug - shows "8 dias" for Court 1 (should be 9), "7 dias" for Court 2 (should be 8)
   if (
-    (
-      /aun\s+no\s+esta\s+disponible/.test(msg) ||
-      /no\s+(esta|se\s+encuentra)\s+(disponible|habilitada)/.test(msg)
-    ) && /(reservacion|reservaciones)/.test(msg)
+    (/aun\s+no\s+esta\s+disponible/.test(msg) ||
+      /no\s+(esta|se\s+encuentra)\s+(disponible|habilitada)/.test(msg)) &&
+    /(reservacion|reservaciones)/.test(msg)
   ) {
     const daysMatch = msg.match(/(\d+)\s+dias?\s+(antes|previo|previos)/);
     return {
@@ -177,7 +178,9 @@ export async function detectError(frame: Frame): Promise<ErrorResult> {
   // Pattern 2: Slot already taken (area capacity hit by others - race condition)
   // Example: "Su reservación excede la cantidad máxima... ya existen otras reservaciones"
   if (
-    /(ya\s+existen\s+otras\s+reservaciones|excede\s+la\s+cantidad\s+maxima)/.test(msg)
+    /(ya\s+existen\s+otras\s+reservaciones|excede\s+la\s+cantidad\s+maxima)/.test(
+      msg,
+    )
   ) {
     return {
       type: "SLOT_TAKEN",
@@ -232,11 +235,11 @@ export async function verifyBookingOnHistoryPage(
   page: Page,
   dateISO: string,
   time: string,
-  area: string
+  area: string,
 ): Promise<boolean> {
   try {
     const pageText = await page.evaluate(() =>
-      document.body.innerText.toLowerCase()
+      document.body.innerText.toLowerCase(),
     );
 
     // Normalize search terms

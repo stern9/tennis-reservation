@@ -13,7 +13,8 @@
     "reserve:shadow": "npm run build && node dist/scripts/reserve.js --test --shadow",
     "reserve:canary": "npm run build && node dist/scripts/reserve.js --test --canary",
     "reserve:mock-unlock": "npm run build && node dist/scripts/reserve.js --test --mock-unlock",
-    "diagnose": "node scripts/diagnose-dates.js"
+    "diagnose": "node scripts/diagnose-dates.js",
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.ts\""
   },
   "keywords": [
     "automation",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "prettier": "^3.6.2",
     "typescript": "^5.0.0"
   }
 }

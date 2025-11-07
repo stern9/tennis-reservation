@@ -8,7 +8,7 @@
  * - Session state management and auto-fallback
  */
 
-import { chromium, Browser, BrowserContext, Page } from 'playwright';
+import { chromium, Browser, BrowserContext, Page } from "playwright";
 
 // ============================================================================
 // TYPES
@@ -16,7 +16,7 @@ import { chromium, Browser, BrowserContext, Page } from 'playwright';
 
 export interface EngineConfig {
   headless: boolean;
-  sessionMode: 'single' | 'contexts';
+  sessionMode: "single" | "contexts";
   blockResources: boolean;
   userAgent?: string;
 }
@@ -29,7 +29,7 @@ export interface ServerTimeResult {
 
 export interface SessionFallbackEvent {
   court: string;
-  reason: 'LOGIN_REDIRECT' | 'AUTH_ERROR' | 'CSRF_ERROR';
+  reason: "LOGIN_REDIRECT" | "AUTH_ERROR" | "CSRF_ERROR";
   timestamp: Date;
 }
 
@@ -46,9 +46,9 @@ export async function launchBrowser(config: EngineConfig): Promise<Browser> {
   return await chromium.launch({
     headless,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
     ],
   });
 }
@@ -58,7 +58,7 @@ export async function launchBrowser(config: EngineConfig): Promise<Browser> {
  */
 export async function createContext(
   browser: Browser,
-  config: EngineConfig
+  config: EngineConfig,
 ): Promise<BrowserContext> {
   const { blockResources, userAgent } = config;
 
@@ -71,29 +71,29 @@ export async function createContext(
   // Disable cache at context level
   await context.addInitScript(() => {
     // Disable service workers
-    if ('serviceWorker' in navigator) {
+    if ("serviceWorker" in navigator) {
       (navigator.serviceWorker as any).register = () => Promise.resolve();
     }
   });
 
   // Block resources for speed
   if (blockResources) {
-    await context.route('**/*', route => {
+    await context.route("**/*", (route) => {
       const resourceType = route.request().resourceType();
-      const blockedTypes = ['image', 'font', 'stylesheet', 'media'];
+      const blockedTypes = ["image", "font", "stylesheet", "media"];
 
       // Also block analytics and tracking
       const url = route.request().url();
       const blockedDomains = [
-        'google-analytics.com',
-        'googletagmanager.com',
-        'facebook.com',
-        'doubleclick.net',
+        "google-analytics.com",
+        "googletagmanager.com",
+        "facebook.com",
+        "doubleclick.net",
       ];
 
       if (
         blockedTypes.includes(resourceType) ||
-        blockedDomains.some(domain => url.includes(domain))
+        blockedDomains.some((domain) => url.includes(domain))
       ) {
         return route.abort();
       }
@@ -116,8 +116,8 @@ export async function getServerTime(url: string): Promise<ServerTimeResult> {
   const localTime = new Date();
 
   try {
-    const response = await fetch(url, { method: 'HEAD' });
-    const dateHeader = response.headers.get('Date');
+    const response = await fetch(url, { method: "HEAD" });
+    const dateHeader = response.headers.get("Date");
 
     if (!dateHeader) {
       return {
@@ -159,7 +159,7 @@ export function calculateT0(serverSkewMs: number): Date {
 // ============================================================================
 
 export interface SessionState {
-  mode: 'single' | 'contexts';
+  mode: "single" | "contexts";
   fallbackApplied: boolean;
   fallbackEvents: SessionFallbackEvent[];
 }
@@ -167,7 +167,9 @@ export interface SessionState {
 /**
  * Create session state tracker
  */
-export function createSessionState(initialMode: 'single' | 'contexts'): SessionState {
+export function createSessionState(
+  initialMode: "single" | "contexts",
+): SessionState {
   return {
     mode: initialMode,
     fallbackApplied: false,
@@ -180,24 +182,32 @@ export function createSessionState(initialMode: 'single' | 'contexts'): SessionS
  */
 export async function detectSessionFailure(page: Page): Promise<{
   failed: boolean;
-  reason?: 'LOGIN_REDIRECT' | 'AUTH_ERROR' | 'CSRF_ERROR';
+  reason?: "LOGIN_REDIRECT" | "AUTH_ERROR" | "CSRF_ERROR";
 }> {
   const url = page.url();
 
   // Check for login redirect
-  if (url.includes('login') || url.includes('signin')) {
-    return { failed: true, reason: 'LOGIN_REDIRECT' };
+  if (url.includes("login") || url.includes("signin")) {
+    return { failed: true, reason: "LOGIN_REDIRECT" };
   }
 
   // Check for auth error in page content
-  const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
+  const bodyText = await page
+    .evaluate(() => document.body.innerText)
+    .catch(() => "");
 
-  if (bodyText.toLowerCase().includes('unauthorized') || bodyText.toLowerCase().includes('sesión')) {
-    return { failed: true, reason: 'AUTH_ERROR' };
+  if (
+    bodyText.toLowerCase().includes("unauthorized") ||
+    bodyText.toLowerCase().includes("sesión")
+  ) {
+    return { failed: true, reason: "AUTH_ERROR" };
   }
 
-  if (bodyText.toLowerCase().includes('csrf') || bodyText.toLowerCase().includes('token')) {
-    return { failed: true, reason: 'CSRF_ERROR' };
+  if (
+    bodyText.toLowerCase().includes("csrf") ||
+    bodyText.toLowerCase().includes("token")
+  ) {
+    return { failed: true, reason: "CSRF_ERROR" };
   }
 
   return { failed: false };
@@ -209,7 +219,7 @@ export async function detectSessionFailure(page: Page): Promise<{
 export function recordFallback(
   sessionState: SessionState,
   court: string,
-  reason: 'LOGIN_REDIRECT' | 'AUTH_ERROR' | 'CSRF_ERROR'
+  reason: "LOGIN_REDIRECT" | "AUTH_ERROR" | "CSRF_ERROR",
 ): void {
   sessionState.fallbackApplied = true;
   sessionState.fallbackEvents.push({
@@ -233,19 +243,21 @@ export interface CourtExecutionOptions {
  * Execute court reservations in parallel
  */
 export async function executeInParallel(
-  courts: CourtExecutionOptions[]
+  courts: CourtExecutionOptions[],
 ): Promise<any[]> {
-  const promises = courts.map(async ({ page, courtName, executeReservation }) => {
-    try {
-      return await executeReservation(page);
-    } catch (error) {
-      return {
-        success: false,
-        error: (error as Error).message,
-        courtName,
-      };
-    }
-  });
+  const promises = courts.map(
+    async ({ page, courtName, executeReservation }) => {
+      try {
+        return await executeReservation(page);
+      } catch (error) {
+        return {
+          success: false,
+          error: (error as Error).message,
+          courtName,
+        };
+      }
+    },
+  );
 
   return await Promise.all(promises);
 }
@@ -263,26 +275,28 @@ export interface MockUnlockOptions {
  * Enable mock unlock mode - delays appearance of "Solicitar Reserva" link
  * This allows testing the polling loop at any time of day
  */
-export async function enableMockUnlock(options: MockUnlockOptions): Promise<void> {
+export async function enableMockUnlock(
+  options: MockUnlockOptions,
+): Promise<void> {
   const { context, delayMs } = options;
 
-  await context.route('**/day.php*', async (route, request) => {
+  await context.route("**/day.php*", async (route, request) => {
     // Delay the response to simulate server unlock timing
-    await new Promise(resolve => setTimeout(resolve, delayMs));
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
     return route.continue();
   });
 
-  await context.route('**/*reservation*.php*', async (route, request) => {
+  await context.route("**/*reservation*.php*", async (route, request) => {
     const url = request.url();
 
     // Intercept day view responses to delay "Solicitar Reserva" link
-    if (url.includes('day.php')) {
+    if (url.includes("day.php")) {
       const response = await route.fetch();
       const body = await response.text();
 
       // Inject delay script
       const modifiedBody = body.replace(
-        '</body>',
+        "</body>",
         `
         <script>
           // Hide reservation link initially
@@ -302,7 +316,7 @@ export async function enableMockUnlock(options: MockUnlockOptions): Promise<void
           }
         </script>
         </body>
-        `
+        `,
       );
 
       return route.fulfill({
@@ -324,7 +338,7 @@ export async function enableMockUnlock(options: MockUnlockOptions): Promise<void
  */
 export async function saveStorageState(
   context: BrowserContext,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   await context.storageState({ path: filePath });
 }
@@ -335,7 +349,7 @@ export async function saveStorageState(
 export async function createContextWithStorage(
   browser: Browser,
   storageStatePath: string,
-  config: EngineConfig
+  config: EngineConfig,
 ): Promise<BrowserContext> {
   const { blockResources, userAgent } = config;
 
@@ -347,9 +361,9 @@ export async function createContextWithStorage(
 
   // Apply resource blocking
   if (blockResources) {
-    await context.route('**/*', route => {
+    await context.route("**/*", (route) => {
       const resourceType = route.request().resourceType();
-      const blockedTypes = ['image', 'font', 'stylesheet', 'media'];
+      const blockedTypes = ["image", "font", "stylesheet", "media"];
 
       if (blockedTypes.includes(resourceType)) {
         return route.abort();
