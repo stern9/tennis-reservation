@@ -9,18 +9,18 @@ Automatically reserves tennis courts at Parques del Sol based on a rolling avail
 - **Court 2** on Tuesdays & Fridays at 7:00 AM
 
 **How it works:**
-- **11:58 PM Costa Rica time**: Script starts, waits until 30s before midnight
-- **11:59:30 PM**: Logs in to warm up session
-- **12:00:00 AM**: Midnight reached - calendar modal opened for first time (fresh data)
-- **12:00:07 AM**: Courts reserved immediately (Playwright waits automatically)
+- **11:58 PM Costa Rica time**: Script starts, waits for midnight
+- **12:00:00 AM**: Midnight reached - makes parallel API calls to mobile endpoints
+- **12:00:01 AM**: Both courts reserved via direct HTTP requests
 - **Court 1**: 9 days ahead
 - **Court 2**: 8 days ahead
 - Sends email confirmation via Resend API
-- **Total time**: ~10-12 seconds (85% faster than original)
+- **Total time**: ~500ms (12x faster than browser automation)
 
 **Technology:**
 - Built with **TypeScript** for type safety and maintainability
-- Uses **Playwright** for fast browser automation
+- Uses **mobile API endpoints** (same as official mobile app)
+- **Direct HTTP calls** - no browser required
 - **Resend API** for email notifications
 - Timezone-aware using Costa Rica time (UTC-6)
 
@@ -89,17 +89,14 @@ FROM_EMAIL_ADDRESS=contact@yourdomain.com
 Before going live, test with available dates:
 
 ```bash
-# Dry run (shows what would be reserved without actually doing it)
-npm run reserve:dry-run
-
-# Test with specific date (debug mode with screenshots)
-npm run reserve:debug -- --target-date 2025-10-15 --court1-time "06:00 AM - 07:00 AM" --skip-court2
+# Test with specific date
+npm run reserve:test -- --target-date 2025-10-15 --court1-time "06:00 AM - 07:00 AM" --skip-court2
 ```
 
 This will:
 - Build TypeScript automatically (via npm scripts)
-- Take screenshots at each step (saved to `screenshots/`)
-- Show detailed logs
+- Make API calls to test endpoints
+- Show detailed logs with timing metrics
 - Send you an email with results
 
 ## 🚀 Usage
@@ -121,9 +118,6 @@ npm run reserve:test -- --target-date 2025-10-15 \
 
 # Test only Court 1
 npm run reserve:test -- --target-date 2025-10-15 --skip-court2
-
-# Dry run (preview what would be reserved)
-npm run reserve:dry-run
 ```
 
 ### Manual Reservation
@@ -133,20 +127,6 @@ npm run reserve:test -- --target-date 2025-10-20 \
   --court1-time "06:00 AM - 07:00 AM" \
   --skip-court2
 ```
-
-### Debug Mode
-
-Enable screenshots and detailed logging:
-
-```bash
-# Debug mode with visible browser
-npm run reserve:watch -- --target-date 2025-10-15
-
-# Debug mode with screenshots (headless)
-npm run reserve:debug -- --target-date 2025-10-15
-```
-
-Screenshots are saved to `screenshots/{timestamp}/` and automatically deleted after email is sent.
 
 ## 🔧 Configuration
 
