@@ -13,7 +13,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 // Import utilities
-import { crMidnight, addDaysCR, formatDateForUrl, getDayOfWeek, nowInCR } from '../src/time-cr';
+import { crMidnight, addDaysCR, formatDateForUrl, getDayOfWeek, nowInCR, parseDateInCR } from '../src/time-cr';
 import { MobileAPIClient } from '../src/mobile-api-client';
 import { resolveScheduleId } from '../src/schedule-resolver';
 import { classifyMessage, getStatusIcon, type MessageType } from '../src/message-classifier';
@@ -376,8 +376,11 @@ async function main() {
   const client = new MobileAPIClient(CONFIG.username, CONFIG.password);
   log('INFO', `🔐 API client initialized (user: ${CONFIG.username})`);
 
-  // Calculate target dates
-  const today = ARGS.test && ARGS.targetDate ? new Date(ARGS.targetDate) : crMidnight();
+  // Wait for midnight (unless in test mode)
+  const t0Time = await waitUntilMidnight();
+
+  // Calculate target dates (AFTER midnight to use correct day)
+  const today = ARGS.test && ARGS.targetDate ? parseDateInCR(ARGS.targetDate) : crMidnight();
 
   const court1Date = addDaysCR(today, CONFIG.courts.court1.daysAhead);
   const court2Date = addDaysCR(today, CONFIG.courts.court2.daysAhead);
@@ -393,9 +396,6 @@ async function main() {
 
   log('INFO', `📅 Court 1 target: ${formatDateForUrl(court1Date)} (${court1DayOfWeek}) at ${court1Time}`);
   log('INFO', `📅 Court 2 target: ${formatDateForUrl(court2Date)} (${court2DayOfWeek}) at ${court2Time}`);
-
-  // Wait for midnight (unless in test mode)
-  const t0Time = await waitUntilMidnight();
 
   // Start timer
   const startTime = Date.now();

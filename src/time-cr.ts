@@ -27,6 +27,19 @@ export function crMidnight(): Date {
 }
 
 /**
+ * Parse a date string (YYYY-MM-DD) as midnight in Costa Rica timezone
+ * This fixes the issue where new Date('2025-11-12') creates UTC midnight,
+ * which is Nov 11 6PM Costa Rica time (off by 1 day).
+ */
+export function parseDateInCR(dateString: string): Date {
+  // Parse YYYY-MM-DD directly (format: "2025-11-12")
+  const [year, month, day] = dateString.split('-').map(s => parseInt(s, 10));
+  // Create date object with year, month (0-indexed), day at midnight
+  // This creates a date in the local timezone, which matches crMidnight() behavior
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+/**
  * Add days to a date (preserves time)
  */
 export function addDaysCR(base: Date, days: number): Date {
