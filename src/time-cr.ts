@@ -33,7 +33,7 @@ export function crMidnight(): Date {
  */
 export function parseDateInCR(dateString: string): Date {
   // Parse YYYY-MM-DD directly (format: "2025-11-12")
-  const [year, month, day] = dateString.split('-').map(s => parseInt(s, 10));
+  const [year, month, day] = dateString.split("-").map((s) => parseInt(s, 10));
   // Create date object with year, month (0-indexed), day at midnight
   // This creates a date in the local timezone, which matches crMidnight() behavior
   return new Date(year, month - 1, day, 0, 0, 0, 0);
